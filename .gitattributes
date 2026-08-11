@@ -1,0 +1,4 @@
+# 统一所有文本文件使用 LF 换行符
+# 消除 Windows 下 CRLF 警告，保证跨系统协作一致
+# Go 官方约定用 LF，Go fmt 工具也用 LF
+* text=auto eol=lf

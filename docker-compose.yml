@@ -1,0 +1,40 @@
+# campuscommunity 本地依赖编排
+# 仅编排 RabbitMQ（默认启动）与 Nginx（prod-preview profile，默认不启动）
+# MySQL 用本地原生、Redis 用虚拟机、Backend/Frontend 原生运行
+# 生成日期: 2026-08-06
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: campuscommunity-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"           # AMQP
+      - "15672:15672"         # 管理 UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - campuscommunity
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: campuscommunity-nginx
+    restart: unless-stopped
+    profiles: ["prod-preview"]   # 默认不启动，`make prod-preview` 时拉起
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro   # 前端构建产物
+    networks:
+      - campuscommunity
+
+volumes:
+  rabbitmq-data:
+
+networks:
+  campuscommunity:
+    driver: bridge

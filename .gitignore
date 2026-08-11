@@ -1,0 +1,28 @@
+# ===== IDE =====
+.idea/
+.trae/
+.vscode/
+
+# ===== Go =====
+backend/tmp/          # air 热重载临时目录
+*.exe
+*.exe~
+
+# ===== 日志 =====
+*.log
+backend/logs/
+
+# ===== 配置（含明文密码，不入库）=====
+# 真实配置文件不入库，仅保留 config.example.yaml 脱敏模板
+backend/internal/conf/config.yaml
+
+# ===== 文档（内部材料，不入库）=====
+docs/
+
+# ===== 系统 =====
+.DS_Store
+Thumbs.db
+
+# ===== 前端依赖（将来 Vue3 项目会有）=====
+frontend/node_modules/
+frontend/dist/
