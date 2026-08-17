@@ -36,6 +36,11 @@ func main() {
 		return
 	}
 	defer mysql.Close() // 程序退出关闭数据库连接
+	// 自动建表：5 张业务表（阶段1）
+	if err := mysql.Migration(); err != nil {
+		fmt.Printf("mysql migration failed, err:%v\n", err)
+		return
+	}
 	//初始化redis
 	if err := redis.Init(conf.Conf.RedisConfig); err != nil {
 		fmt.Printf("init redis failed, err:%v\n", err)
