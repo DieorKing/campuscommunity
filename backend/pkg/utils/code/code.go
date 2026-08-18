@@ -16,6 +16,11 @@ const (
 	CodeNeedLogin    ResCode = 10003
 	CodeInvalidToken ResCode = 10004
 	CodeWrongLogin   ResCode = 10005 //用户名或密码错误
+
+	//拼单模块
+	CodeGroupBuyNotExist ResCode = 20001 //拼单不存在
+	CodeGroupBuyExpired  ResCode = 20002 //拼单已截止
+	CodeGroupBuyInvalid  ResCode = 20003 //拼单参数不合法
 )
 
 var codeMesMap = map[ResCode]string{
@@ -29,6 +34,10 @@ var codeMesMap = map[ResCode]string{
 	CodeNeedLogin:    "需要登录",
 	CodeInvalidToken: "无效的Token",
 	CodeWrongLogin:   "用户名或密码错误",
+
+	CodeGroupBuyNotExist: "拼单不存在",
+	CodeGroupBuyExpired:  "拼单已截止",
+	CodeGroupBuyInvalid:  "拼单参数不合法",
 }
 
 func (c ResCode) Msg() string {

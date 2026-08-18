@@ -40,6 +40,13 @@ func SetupRouter(mode string) *gin.Engine {
 		userGroup.PATCH("/profile", controller.UpdateProfileHandler) // 修改个人资料（PATCH 部分字段更新）
 		userGroup.PUT("/address", controller.UpdateAddressHandler)   // 修改收货地址
 	}
+
+	// 拼单模块：发布（挂 JWT 鉴权，发布必须登录）
+	groupBuyGroup := v1.Group("/group-buy")
+	groupBuyGroup.Use(jwtmid.JWTAuthMiddleware())
+	{
+		groupBuyGroup.POST("", controller.CreateGroupBuyHandler) // 发布拼单（列表/详情路由在后续功能追加）
+	}
 	if mode == gin.DebugMode {
 		pprof.Register(r)
 	}
