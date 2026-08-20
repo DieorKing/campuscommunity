@@ -50,6 +50,24 @@ func GetUserByUserID(userID int64) (*model.User, error) {
 	return &user, nil
 }
 
+// GetUsersByUserIDs 按业务主键批量查询用户（详情页参与人员昵称/头像回填）。
+// N+1 防御：若对每个参与者逐个调 GetUserByID，10 人 = 10 次 DB 往返；
+// IN 单次往返拿全，参与者越多差距越大——凡「批量补关联数据」的标准做法都是 IN 批查。
+// 返回顺序不保证（与 GetGroupBuysByIDs 同理），调用方应建 map[user_id]User 索引后 O(1) 取用。
+// userIDs 为空时短路返回：IN () 空切片在 GORM 中生成非法 SQL，边界必防。
+// 注：查全行（*）——参与人员回填需要 nickname+avatar 多列，Pluck 单列不适用；
+// 且 IN 走 user_id 唯一索引，行数 = 参与人数，有界可控。
+func GetUsersByUserIDs(userIDs []int64) ([]model.User, error) {
+	var users []model.User
+	if len(userIDs) == 0 {
+		return users, nil
+	}
+	if err := mysql.GetDB().Where("user_id IN ?", userIDs).Find(&users).Error; err != nil {
+		return nil, fmt.Errorf("dao: get users by user ids: %w", err)
+	}
+	return users, nil
+}
+
 // UpdateUserProfile 更新个人资料字段（PATCH 部分更新，配合 logic 层动态组装）。
 // data 为 map[string]any，由 logic 层按「前端提交了哪些字段」组装后传入：
 // GORM Updates(map) 只更新 map 中出现的列，其余列保持不动，天然支持部分更新。

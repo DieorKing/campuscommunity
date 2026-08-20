@@ -2,8 +2,15 @@ package conf
 
 import "time"
 
+// ── 单据地图（本文件）─────────────────────────────────────
+// ServerConfig → 【config.yaml 的 Go 镜像】：根节点嵌 6 个子配置
+// 嵌套判据：配置文件有层级 → 嵌套（YAML 的 log:/mysql:/redis: 一层对一层）
+// ──────────────────────────────────────────────────────────
+
+// 全局配置单例：Init 时 Viper 反序列化填充，进程内任意包 conf.Conf 直接读。
 var Conf = new(ServerConfig)
 
+// ServerConfig 【config.yaml 根节点】服务配置总入口，嵌各子配置（形状跟 YAML 层级走）。
 type ServerConfig struct {
 	Name             string `mapstructure:"name"`
 	Mode             string `mapstructure:"run_mode"`

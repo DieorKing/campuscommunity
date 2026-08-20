@@ -41,11 +41,24 @@ func SetupRouter(mode string) *gin.Engine {
 		userGroup.PUT("/address", controller.UpdateAddressHandler)   // 修改收货地址
 	}
 
-	// 拼单模块：发布（挂 JWT 鉴权，发布必须登录）
+	// 拼单模块：发布 + 详情（挂 JWT 强制鉴权，两个接口都必须登录）。
+	// 详情放强制组而非可选组：详情页是转化入口（看完就要抢单），且 is_joined/is_publisher
+	// 本人视角字段必须有确定 userID 才有意义（契约 frontend-design §4.3）。
 	groupBuyGroup := v1.Group("/group-buy")
 	groupBuyGroup.Use(jwtmid.JWTAuthMiddleware())
 	{
-		groupBuyGroup.POST("", controller.CreateGroupBuyHandler) // 发布拼单（列表/详情路由在后续功能追加）
+		groupBuyGroup.POST("", controller.CreateGroupBuyHandler)    // 发布拼单
+		groupBuyGroup.GET("/:id", controller.GroupBuyDetailHandler) // 拼单详情（强制鉴权）
+	}
+
+	// 拼单模块：列表（可选鉴权——公开浏览 + 登录后附加参与标记，挂 JWTOptional 而非强制鉴权）。
+	// 不能放进上面强制鉴权的 groupBuyGroup：列表必须允许匿名访问，只有发布/详情需要登录。
+	// 路由树说明：/list（静态段）与 /:id（参数段）在同一位置共存，Gin 匹配静态优先——
+	// GET /group-buy/list 命中静态路由，GET /group-buy/123 才落入 :id 参数节点。
+	groupBuyPublicGroup := v1.Group("/group-buy")
+	groupBuyPublicGroup.Use(jwtmid.JWTOptionalMiddleware())
+	{
+		groupBuyPublicGroup.GET("/list", controller.ListGroupBuyHandler) // 拼单列表（latest/hot）
 	}
 	if mode == gin.DebugMode {
 		pprof.Register(r)

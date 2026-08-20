@@ -1,5 +1,12 @@
 package model
 
+// ── 单据地图（通知模块·表）───────────────────────────────
+// Notification          → notifications 表的【一封信】：发给某用户的站内信（DB 行，阶段 7-8 使用）
+// NotificationType      → 通知大类枚举（group_buy / order）
+// NotificationCategory  → 通知细类枚举（成团/失败/待支付…）
+// 通知模块的接口单据（通知列表/标记已读）随阶段 8 开发补充
+// ─────────────────────────────────────────────────────────
+
 // NotificationType 通知大类：拼单 or 订单。
 type NotificationType string
 
@@ -26,7 +33,8 @@ const (
 	CategoryClosed     NotificationCategory = "closed"      // 已关闭
 )
 
-// Notification 应用内通知表（MVP 唯一通知渠道：前端轮询本表拉取）。
+// Notification 【一封信】notifications 表行：发给某用户的一条站内信（DB 映射，model 层）。
+// MVP 唯一通知渠道：前端 30s 轮询本表拉取。
 // 消息流转：业务事件 → RabbitMQ → 消费者写本表 → 前端刷新拉取（阶段7 实现）。
 type Notification struct {
 	BaseModel
