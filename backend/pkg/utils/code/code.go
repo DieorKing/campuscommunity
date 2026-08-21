@@ -21,6 +21,12 @@ const (
 	CodeGroupBuyNotExist ResCode = 20001 //拼单不存在
 	CodeGroupBuyExpired  ResCode = 20002 //拼单已截止
 	CodeGroupBuyInvalid  ResCode = 20003 //拼单参数不合法
+
+	//抢单模块
+	CodeGrabSoldOut   ResCode = 20004 //已售罄（库存不足，用户该死心）
+	CodeGrabDuplicate ResCode = 20005 //已参与过该拼单
+	CodeGrabPublisher ResCode = 20006 //发布者不能参与自己的拼单
+	CodeGrabBusy      ResCode = 20007 //抢单繁忙请重试（锁竞争≠售罄，用户该重试）
 )
 
 var codeMesMap = map[ResCode]string{
@@ -38,6 +44,11 @@ var codeMesMap = map[ResCode]string{
 	CodeGroupBuyNotExist: "拼单不存在",
 	CodeGroupBuyExpired:  "拼单已截止",
 	CodeGroupBuyInvalid:  "拼单参数不合法",
+
+	CodeGrabSoldOut:   "已售罄",
+	CodeGrabDuplicate: "已参与过该拼单",
+	CodeGrabPublisher: "发布者不能参与自己的拼单",
+	CodeGrabBusy:      "抢单繁忙，请稍后重试",
 }
 
 func (c ResCode) Msg() string {

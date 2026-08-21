@@ -41,14 +41,16 @@ func SetupRouter(mode string) *gin.Engine {
 		userGroup.PUT("/address", controller.UpdateAddressHandler)   // 修改收货地址
 	}
 
-	// 拼单模块：发布 + 详情（挂 JWT 强制鉴权，两个接口都必须登录）。
-	// 详情放强制组而非可选组：详情页是转化入口（看完就要抢单），且 is_joined/is_publisher
-	// 本人视角字段必须有确定 userID 才有意义（契约 frontend-design §4.3）。
+	// 拼单模块：发布 + 详情 + 抢单 + 状态轮询（挂 JWT 强制鉴权，四个接口都必须登录）。
+	// 详情/抢单/轮询放强制组：详情页是转化入口（看完就要抢单），抢单与轮询依赖
+	// 确定的 userID（本人视角/幂等判定），匿名请求无意义。
 	groupBuyGroup := v1.Group("/group-buy")
 	groupBuyGroup.Use(jwtmid.JWTAuthMiddleware())
 	{
 		groupBuyGroup.POST("", controller.CreateGroupBuyHandler)    // 发布拼单
-		groupBuyGroup.GET("/:id", controller.GroupBuyDetailHandler) // 拼单详情（强制鉴权）
+		groupBuyGroup.GET("/:id", controller.GroupBuyDetailHandler) // 拼单详情
+		groupBuyGroup.POST("/:id/grab", controller.GrabHandler)     // 抢单（受理中）
+		groupBuyGroup.GET("/:id/status", controller.StatusHandler)  // 抢单状态轮询（前端 5s 驱动）
 	}
 
 	// 拼单模块：列表（可选鉴权——公开浏览 + 登录后附加参与标记，挂 JWTOptional 而非强制鉴权）。

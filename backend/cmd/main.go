@@ -4,6 +4,7 @@ import (
 	"campuscommunity/internal/conf"
 	"campuscommunity/internal/dao/mysql"
 	"campuscommunity/internal/dao/redis"
+	"campuscommunity/internal/mq"
 	"campuscommunity/internal/router"
 	"campuscommunity/pkg/utils/logger"
 	"campuscommunity/pkg/utils/snowflake"
@@ -47,6 +48,12 @@ func main() {
 		return
 	}
 	defer redis.Close()
+	//初始化RabbitMQ（含交换机/队列/绑定拓扑声明，幂等）
+	if err := mq.Init(conf.Conf.RabbitMQConfig); err != nil {
+		fmt.Printf("init rabbitmq failed, err:%v\n", err)
+		return
+	}
+	defer mq.Close()
 	// 注册路由
 	r := router.SetupRouter(conf.Conf.Mode)
 	err := r.Run(fmt.Sprintf(":%d", conf.Conf.Port))
