@@ -1,5 +1,5 @@
 // Package mq RabbitMQ 数据访问层：连接管理、拓扑声明与消息发布，不含业务逻辑。
-// 阶段4 仅生产者侧（抢单投递建单消息）；消费者（建单）在阶段5 实现。
+// 本文件为连接与拓扑管理；消息发布见 producer.go，消费见 consumer_order.go。
 package mq
 
 import (
@@ -29,13 +29,20 @@ const (
 
 // Init 初始化 RabbitMQ 连接与拓扑（fail-fast：连接失败直接 fatal，不降级运行）。
 // 拓扑声明（exchange/queue/binding）幂等：重复声明参数一致无副作用，
-// 等价于 MySQL AutoMigrate 的"启动时确保结构存在"——消费者（阶段5）重复声明不冲突。
+// 等价于 MySQL AutoMigrate 的"启动时确保结构存在"——消费者重复声明不冲突。
 // durable=true + persistent 消息：broker 重启后拓扑与未消费消息不丢（防丢消息三段防御的 broker 侧）。
 func Init(cfg *conf.RabbitMQConfig) error {
 	// 建连：amqp://user:pass@host:port/vhost
 	// vhost 为 "/" 时 URL 以 / 结尾（默认 vhost），与 config.yaml 一致
+	// ! 赋值必须用 = 而非 :=：若写成 conn, err := amqp.Dial(url)，:= 会声明
+	// 【函数局部】conn 遮蔽（shadow）包级 conn——局部 conn 拿到真连接，包级
+	// conn 永远为 nil，Init 却照样返回成功；直到首个使用包级 conn 的代码
+	// （消费者 conn.Channel()）触发 nil pointer panic。此问题曾实际出现过：发布路径
+	// 只用 channel（那行 = 写对了）一切正常，消费者首个使用 conn 的调用即
+	// panic。Go 经典陷阱，govet 的 shadow 分析器可检出。
 	url := fmt.Sprintf("amqp://%s:%s@%s:%d%s", cfg.Username, cfg.Password, cfg.Host, cfg.Port, cfg.Vhost)
-	conn, err := amqp.Dial(url)
+	var err error              // 显式声明 err，下面的赋值才能对包级变量生效
+	conn, err = amqp.Dial(url) // = 赋值包级 conn（真实连接）
 	if err != nil {
 		return fmt.Errorf("mq: dial: %w", err)
 	}
@@ -47,32 +54,32 @@ func Init(cfg *conf.RabbitMQConfig) error {
 	// 声明 direct 交换机（durable：broker 重启后存在）
 	if err := channel.ExchangeDeclare(
 		cfg.Exchange, "direct",
-		 true,
-		  false,
-		   false,
-		    false,
-			 nil); err != nil {
+		true,
+		false,
+		false,
+		false,
+		nil); err != nil {
 		return fmt.Errorf("mq: declare exchange: %w", err)
 	}
-	// 声明建单队列（durable）。队列在 Init 声明而非消费者声明：
-	// 阶段4 无消费者，durable 队列让消息落盘积压（管理界面可见），
-	// 阶段5 消费者上线后从队列头开始消化——消息不因"还没人消费"而丢失。
+	// 声明建单队列（durable）。队列在 Init 统一声明：
+	// durable 队列让消息落盘积压（管理界面可见），
+	// 消费者上线后从队列头开始消化——消息不因"还没人消费"而丢失。
 	if _, err := channel.QueueDeclare(
 		GrabOrderQueue,
-		 true,
-		  false,
-		   false,
-		    false,
-			 nil); err != nil {
+		true,
+		false,
+		false,
+		false,
+		nil); err != nil {
 		return fmt.Errorf("mq: declare grab order queue: %w", err)
 	}
 	// 绑定：队列以 routing key 挂到交换机——不绑定则消息路由无目的地，直接丢弃
 	if err := channel.QueueBind(
 		GrabOrderQueue,
-		 GrabOrderRoutingKey,
-		  cfg.Exchange,
-		   false,
-		    nil); err != nil {
+		GrabOrderRoutingKey,
+		cfg.Exchange,
+		false,
+		nil); err != nil {
 		return fmt.Errorf("mq: bind grab order queue: %w", err)
 	}
 	exchangeName = cfg.Exchange

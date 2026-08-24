@@ -62,6 +62,19 @@ func SetupRouter(mode string) *gin.Engine {
 	{
 		groupBuyPublicGroup.GET("/list", controller.ListGroupBuyHandler) // 拼单列表（latest/hot）
 	}
+	// 订单模块：支付/取消/列表/详情（挂 JWT 强制鉴权——订单是私产，
+	// 全部接口依赖确定的 userID 做所有权校验，匿名无意义）。
+	// 路由树：/list（静态段）与 /:id（参数段）同位共存，Gin 静态优先
+	//（与 group-buy 同款），GET /order/list 命中列表，GET /order/123 落 :id。
+	orderGroup := v1.Group("/order")
+	orderGroup.Use(jwtmid.JWTAuthMiddleware())
+	{
+		orderGroup.POST("/:id/pay", controller.PayHandler)         // 模拟支付（状态机守卫）
+		orderGroup.POST("/:id/cancel", controller.CancelHandler)   // 仅 pending_pay 可取消
+		orderGroup.GET("/list", controller.ListOrdersHandler)      // 我的订单（状态筛选+分页）
+		orderGroup.GET("/:id", controller.OrderDetailHandler)      // 订单详情（所有权校验）
+	}
+
 	if mode == gin.DebugMode {
 		pprof.Register(r)
 	}

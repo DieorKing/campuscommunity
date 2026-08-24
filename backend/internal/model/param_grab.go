@@ -6,8 +6,8 @@ package model
 // （抢单无请求体——good_id 在 URL 路径、user_id 在 JWT 里，无请求 DTO）
 // ─────────────────────────────────────────────────────────
 
-// GrabResult 【回执单】抢单接口响应（POST /api/v1/group-buy/:id/grab，契约 mvp §4.3）。
-// 异步建单契约的核心体现：抢单成功 ≠ 订单已生成。
+// GrabResult 【回执单】抢单接口响应（POST /api/v1/group-buy/:id/grab）。
+// 异步建单的核心体现：抢单成功 ≠ 订单已生成。
 // grabbed=true + order_id=null 是合法状态——「受理中」，前端转轮询。
 type GrabResult struct {
 	Grabbed bool  `json:"grabbed"`  // 是否抢到（Redis 预扣成功）

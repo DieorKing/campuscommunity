@@ -1,6 +1,9 @@
 <template>
   <div class="auth-container">
     <el-card class="auth-card">
+      <div class="auth-brand">
+        <img :src="logoUrl" alt="校园拼团" class="auth-logo" />
+      </div>
       <h2 class="auth-title">校园拼团 · 注册</h2>
       <el-form ref="formRef" :model="form" :rules="rules">
         <el-form-item prop="username">
@@ -47,6 +50,8 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '../stores/user'
+// 图片资源从 assets 导入：Vite 构建时哈希命名 + 压缩，比 public/ 直链更规范
+import logoUrl from '../assets/logoGroupBuy.png'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -121,6 +126,18 @@ async function handleRegister() {
 .auth-card {
   width: 380px;
   padding: 12px 16px;
+}
+
+.auth-brand {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.auth-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
 }
 
 .auth-title {

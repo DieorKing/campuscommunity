@@ -4,16 +4,17 @@ package redis
 
 import (
 	"fmt"
+	"strconv"
 )
 
 // groupBuyStockKey 拼单库存键：group_buy:{good_id}:stock。
-// 键命名统一用业务主键 good_id（见 mvp §0.2），方便按拼单维度排查。
+// 键命名统一用业务主键 good_id，方便按拼单维度排查。
 func groupBuyStockKey(goodID int64) string {
 	return fmt.Sprintf("group_buy:%d:stock", goodID)
 }
 
 // groupBuyMembersKey 拼单成员键：group_buy:{good_id}:members（Set 集合）。
-// 存已参与用户的 user_id，用于抢单去重（阶段4 使用）。
+// 存已参与用户的 user_id，用于抢单去重。
 func groupBuyMembersKey(goodID int64) string {
 	return fmt.Sprintf("group_buy:%d:members", goodID)
 }
@@ -23,7 +24,7 @@ func groupBuyMembersKey(goodID int64) string {
 // 语义：这两个键代表该拼单在 Redis 里的"份额池"，抢单阶段所有预扣都基于它。
 // 无 TTL（持久键）：拼单生命周期内库存一直存在；订单超时/取消会 INCR 回补，
 // 拼单过期后的清理属于延时任务职责，此处不设过期时间。
-// 注意：两个 SET 非原子——若 DB 写入成功后这里失败，由 logic 层回滚（阶段3 讲解）。利用事务保持数据一致性
+// 注意：两个 SET 非原子——若 DB 写入成功后这里失败，由 logic 层回滚，利用事务保持数据一致性
 func InitGroupBuyStock(goodID int64, maxMembers int) error {
 	// 初始化库存：SET group_buy:{good_id}:stock <max_members>
 	if err := client.Set(groupBuyStockKey(goodID), maxMembers, 0).Err(); err != nil {
@@ -49,4 +50,23 @@ func GetGroupBuyStock(goodID int64) (int64, error) {
 		return 0, fmt.Errorf("redis: get group buy stock: %w", err)
 	}
 	return val, nil
+}
+
+// ReleaseGroupBuySlot 释放拼单名额（用户取消订单时调用：
+// INCR stock + SREM members）。与预扣（DECR + SADD）互为逆操作。
+// 时序约定：必须在 DB 取消事务【提交成功后】调用——Redis 是派生数据，
+// 真值源（订单状态）先行；若反序，DB 取消失败而 Redis 已放名额 = 超卖窗口。
+// 两条命令非原子（无 Lua）：取消是低频用户操作，且 SREM 残留的后果仅是
+// 该用户无法再抢此单（DUPLICATE 拦截，少卖方向可容忍），不值得为此加锁。
+// 失败语义 best-effort：调用方记日志观察，修复靠人工/补偿任务。
+func ReleaseGroupBuySlot(goodID, userID int64) error {
+	// 1. 库存 +1：让出的名额可被后续抢单者预扣
+	if err := client.Incr(groupBuyStockKey(goodID)).Err(); err != nil {
+		return fmt.Errorf("redis: release slot incr stock: %w", err)
+	}
+	// 2. 成员移除：该用户恢复「可再抢此单」资格（SREM 残留则被 DUPLICATE 误拦）
+	if err := client.SRem(groupBuyMembersKey(goodID), strconv.FormatInt(userID, 10)).Err(); err != nil {
+		return fmt.Errorf("redis: release slot srem member: %w", err)
+	}
+	return nil
 }

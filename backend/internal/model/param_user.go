@@ -32,7 +32,7 @@ type ParamUpdateProfile struct {
 }
 
 // ParamUpdateAddress 【修改单·地址】收货地址提交（PUT /api/v1/user/address，请求体 JSON）。
-// 地址为单字段存储（mvp §1.4），后端仅做长度校验。
+// 地址为单字段存储，后端仅做长度校验。
 type ParamUpdateAddress struct {
 	Address string `json:"address" binding:"required,max=255"` // 收货地址
 }

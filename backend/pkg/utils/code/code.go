@@ -27,6 +27,10 @@ const (
 	CodeGrabDuplicate ResCode = 20005 //已参与过该拼单
 	CodeGrabPublisher ResCode = 20006 //发布者不能参与自己的拼单
 	CodeGrabBusy      ResCode = 20007 //抢单繁忙请重试（锁竞争≠售罄，用户该重试）
+
+	//订单模块
+	CodeOrderNotExist      ResCode = 30001 //订单不存在
+	CodeOrderStatusChanged ResCode = 30002 //订单状态已变更（状态机拒绝：双击支付/已支付后取消）
 )
 
 var codeMesMap = map[ResCode]string{
@@ -49,6 +53,9 @@ var codeMesMap = map[ResCode]string{
 	CodeGrabDuplicate: "已参与过该拼单",
 	CodeGrabPublisher: "发布者不能参与自己的拼单",
 	CodeGrabBusy:      "抢单繁忙，请稍后重试",
+
+	CodeOrderNotExist:      "订单不存在",
+	CodeOrderStatusChanged: "订单状态已变更，请刷新后重试",
 }
 
 func (c ResCode) Msg() string {

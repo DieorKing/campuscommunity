@@ -26,7 +26,7 @@ var (
 
 // SignUp 注册：密码强度校验 → 用户名查重 → bcrypt 哈希 → 雪花 ID → 落库。
 func SignUp(p *model.ParamRegister) error {
-	// 1. 密码强度校验（mvp §1.4：长度≥8 且含字母+数字，业务规则在 logic 层实现）
+	// 1. 密码强度校验（长度≥8 且含字母+数字，业务规则在 logic 层实现）
 	if !isStrongPassword(p.Password) {
 		return ErrWeakPassword
 	}
@@ -79,7 +79,7 @@ func Login(p *model.ParamLogin) (string, error) {
 	if err := password.Check(p.Password, user.Password); err != nil {
 		return "", ErrWrongLogin
 	}
-	// 4. 签发 JWT：payload 仅含 user_id + exp + iss（mvp §1.4）
+	// 4. 签发 JWT：payload 仅含 user_id + exp + iss
 	token, err := jwt.GenToken(user.UserID)
 	if err != nil {
 		return "", fmt.Errorf("logic: login gen token: %w", err)
@@ -151,7 +151,7 @@ func UpdateUserAddress(userID int64, p *model.ParamUpdateAddress) error {
 	return nil
 }
 
-// isStrongPassword 密码强度规则（mvp §1.4）：长度 ≥ 8 且同时含字母和数字。
+// isStrongPassword 密码强度规则：长度 ≥ 8 且同时含字母和数字。
 // 不用正则：单次遍历即可统计，无额外依赖、可读性更好。
 func isStrongPassword(pwd string) bool {
 	if len(pwd) < 8 {

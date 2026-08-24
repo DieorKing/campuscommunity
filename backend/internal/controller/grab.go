@@ -13,7 +13,7 @@ import (
 )
 
 // GrabHandler 抢单 POST /api/v1/group-buy/:id/grab（需登录，强制鉴权组）。
-// 异步建单契约：成功响应是「受理中」（grabbed=true, order_id=0），
+// 异步建单约定：成功响应是「受理中」（grabbed=true, order_id=0），
 // 订单号由前端轮询 /status 获取——抢单请求本身不等待建单完成。
 func GrabHandler(c *gin.Context) {
 	// 1. 解析路径参数 :id（用户可控输入，不可信边界）：非数字一律 1001 拦下

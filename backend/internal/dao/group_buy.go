@@ -40,7 +40,7 @@ func DeleteGroupBuy(goodID int64) error {
 	return nil
 }
 
-// ListGroupBuyPage 按创建时间倒序分页查询拼单列表（latest 排序，契约 mvp §2.4）。
+// ListGroupBuyPage 按创建时间倒序分页查询拼单列表（latest 排序）。
 // page 从 1 开始（由 logic 层归一化，DAO 只信任入参）；total 为全量计数（前端显示总数）。
 // 不过滤 status：latest 列表展示所有拼单（含已成团/失败），前端用状态徽章区分——
 // 与 hot 榜「只展示 recruiting」语义不同，hot 的过滤在 logic 层回表后做。
@@ -66,7 +66,7 @@ func ListGroupBuyPage(page, pageSize int) ([]model.GroupBuy, int64, error) {
 	return list, total, nil
 }
 
-// GetGroupBuysByIDs 按业务主键批量查询拼单（hot 榜回表，契约 mvp §2.4）。
+// GetGroupBuysByIDs 按业务主键批量查询拼单（hot 榜回表）。
 // 热榜 ZREVRANGE 只能拿到 good_id+score，商品详情需回 MySQL 补全——
 // IN 单次往返代替 N 次单查（N+1 问题），这是「缓存持 ID、DB 补详情」的标准两段式。
 // 返回顺序不保证：DB IN 查询按存储顺序返回，logic 层需按热榜顺序重排。
@@ -115,7 +115,7 @@ func ListGroupBuyMembersByGoodID(goodID int64) ([]model.GroupBuyMember, error) {
 }
 
 // GetUserJoinedGoodIDs 查询用户在给定拼单集合中已参与的 good_id 集合。
-// 用途：列表/详情接口的「本人参与标记」（契约：登录后每项附加参与标记）。
+// 用途：列表/详情接口的「本人参与标记」（登录后每项附加参与标记）。
 // 返回 map[good_id]bool 而非 []int64：调用方组装列表时 O(1) 判断某拼单是否参与，
 // 避免对每个列表项做线性 contains（10 条/页无感，但写法上 map 是标准做法）。
 // goodIDs 为空时短路返回空 map——IN () 空切片在 GORM 中生成非法 SQL，必须防御。

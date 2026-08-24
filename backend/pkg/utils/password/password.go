@@ -7,8 +7,7 @@ import (
 )
 
 // Cost 是 bcrypt 的计算成本因子，值越大越安全但越慢。
-// grill 固化决策：cost=10（[mvp §1.4](../../../docs/mvp-v1.0-features.md)），
-// 10 是业界默认值，单次哈希约 60ms，兼顾安全与性能。
+// cost=10 为业界默认值，单次哈希约 60ms，兼顾安全与性能。
 const Cost = 10
 
 // Hash 将明文密码加密为 bcrypt 哈希字符串。

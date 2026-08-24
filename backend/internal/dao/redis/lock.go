@@ -1,5 +1,5 @@
 // Package redis 数据访问层：Redis 缓存/库存操作，不含业务逻辑。
-// 本文件为抢单流程的分布式锁（契约 mvp §4.3 step2 获取 / step5 释放）。
+// 本文件为抢单流程的分布式锁（step2 获取 / step5 释放）。
 package redis
 
 import (
@@ -18,7 +18,7 @@ func lockKey(goodID int64) string {
 	return fmt.Sprintf("group_buy:%d:lock", goodID)
 }
 
-// lockTTL 锁自动过期时间 3 秒（契约 mvp §4.3）。
+// lockTTL 锁自动过期时间 3 秒。
 // 为什么必须有 TTL：持锁进程崩溃后无人主动释放，锁永不过期 = 该拼单的
 // 所有后续抢单永久阻塞（死锁）。TTL 是崩溃场景的自动兜底——宁可 3 秒后
 // 放别人进来，也不能让一把死锁挂死整个拼单。
@@ -39,7 +39,7 @@ end
 return 0
 `
 
-// AcquireLock 获取拼单级分布式锁（SET key token NX EX 3s，契约 mvp §4.3 step2）。
+// AcquireLock 获取拼单级分布式锁（SET key token NX EX 3s）。
 // token 是锁持有者凭证：释放时必须比对一致才允许删除——防止
 // 「A 的锁过期 → B 获得锁 → A 恢复后 DEL」误删 B 的锁。
 // token 用雪花 ID 生成（教科书用 UUID；任何全局唯一的不透明值都可充当，
@@ -59,7 +59,7 @@ func AcquireLock(goodID int64) (string, bool, error) {
 	return token, ok, nil
 }
 
-// ReleaseLock 释放拼单级分布式锁（Lua 比对 token 后原子删除，契约 mvp §4.3 step5）。
+// ReleaseLock 释放拼单级分布式锁（Lua 比对 token 后原子删除）。
 // 返回 true = 锁由本持有者正常释放；false = 锁已过期或已被他人获取（未删除）。
 // false 不视为错误：锁过期是 TTL 机制的正常行为，调用方记日志观察即可。
 func ReleaseLock(goodID int64, token string) (bool, error) {

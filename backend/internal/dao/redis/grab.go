@@ -1,5 +1,5 @@
 // Package redis 数据访问层：Redis 缓存/库存操作，不含业务逻辑。
-// 本文件为抢单 Lua 原子预扣（契约 mvp §4.3 step3）与参与标记查询（/status 轮询用）。
+// 本文件为抢单 Lua 原子预扣与参与标记查询（/status 轮询用）。
 package redis
 
 import (
@@ -48,7 +48,7 @@ const (
 	GrabLuaDuplicate = "DUPLICATE" // 重复参与
 )
 
-// ExecGrabLua 执行抢单预扣脚本（契约 mvp §4.3 step3，在分布式锁内调用）。
+// ExecGrabLua 执行抢单预扣脚本（在分布式锁内调用）。
 // KEYS[1] = members 集合键，KEYS[2] = stock 库存键，ARGV[1] = user_id。
 // 返回三个常量之一；err 仅在 Redis 故障时非 nil。
 func ExecGrabLua(goodID, userID int64) (string, error) {

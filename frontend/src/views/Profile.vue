@@ -85,7 +85,7 @@ onMounted(async () => {
   }
 })
 
-// 保存资料：只提交「修改过的字段」（PATCH 部分更新，与后端契约一致）
+// 保存资料：只提交「修改过的字段」（PATCH 部分更新，与后端接口语义一致）
 async function handleSaveProfile() {
   const patch = {}
   if (edit.nickname !== (userInfo.value.nickname || '')) patch.nickname = edit.nickname

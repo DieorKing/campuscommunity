@@ -67,7 +67,7 @@ func ListGroupBuyHandler(c *gin.Context) {
 }
 
 // GroupBuyDetailHandler 拼单详情 GET /api/v1/group-buy/:id（需登录，强制鉴权组）。
-// 与列表接口的两点差异（同是读接口，鉴权策略不同——契约决策而非技术约束）：
+// 与列表接口的两点差异（同是读接口，鉴权策略不同——产品决策而非技术约束）：
 //  1. 强制 JWT：详情页是转化入口（看完详情就要抢单），匿名看列表、点详情要求登录，
 //     且 is_joined/is_publisher 本人视角字段必须有确定的 userID 才有意义；
 //  2. 参数在路径 :id 而非 query——REST 语义：路径标识资源（哪个拼单），query 修饰呈现（怎么排）。
@@ -95,6 +95,6 @@ func GroupBuyDetailHandler(c *gin.Context) {
 		return
 	}
 	// 4. 成功：返回详情 DTO（商品全量 + 进度 + 参与人员 + is_joined/is_publisher 本人视角），
-	//    前端进页一次渲染完成，之后轮询走轻量 /status（阶段 4 实现）。
+	//    前端进页一次渲染完成，之后轮询走轻量 /status。
 	response.ResponseSuccess(c, detail)
 }

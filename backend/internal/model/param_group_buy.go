@@ -38,8 +38,8 @@ type ParamListGroupBuy struct {
 // 为什么单独定义响应 DTO 而不直接返回 model.GroupBuy：
 //  1. 列表页不展示 description（最大 2000 字符），10 条/页直接返回会白传 20KB；
 //  2. 前端展示需要「已参与人数」计算进度条，GroupBuy 里叫 current_members，
-//     复用契约名即可，但热榜项要额外带 hot_score——model 层没有该字段；
-//  3. 分层契约：model 是 DB 映射（对内），DTO 是 API 形状（对外），两者解耦后互不牵连。
+//     直接复用该字段名即可，但热榜项要额外带 hot_score——model 层没有该字段；
+//  3. 分层约定：model 是 DB 映射（对内），DTO 是 API 形状（对外），两者解耦后互不牵连。
 type GroupBuyItem struct {
 	GoodID         int64          `json:"good_id"` // 业务主键，前端跳详情用
 	Title          string         `json:"title"`
@@ -51,7 +51,7 @@ type GroupBuyItem struct {
 	Status         GroupBuyStatus `json:"status"`    // recruiting/full/succeeded/failed/expired（枚举见 group_buy.go）
 	Deadline       time.Time      `json:"deadline"`  // 截止时间（前端判断可否参与）
 	HotScore       float64        `json:"hot_score"` // 热度分（仅 hot 排序有值，latest 为 0——统一字段省得前端判空）
-	IsJoined       bool           `json:"is_joined"` // 本人是否已参与（契约：登录后每项附加参与标记；未登录恒 false）
+	IsJoined       bool           `json:"is_joined"` // 本人是否已参与（登录后每项附加参与标记；未登录恒 false）
 	CreatedAt      time.Time      `json:"created_at"`
 }
 
@@ -66,7 +66,7 @@ type ListResult struct {
 	PageSize int   `json:"page_size"` // 归一化后的页大小
 }
 
-// GroupBuyDetail 【整页数据】详情页的响应（GET /api/v1/group-buy/:id，契约 frontend-design §4.3：
+// GroupBuyDetail 【整页数据】详情页的响应（GET /api/v1/group-buy/:id：
 // 进页一次拿全——商品信息 + 进度 + 参与人员列表，之后轮询走轻量 /status）。
 // 与列表项 GroupBuyItem 的三点差异（DTO 按「页面需要什么」裁剪，而非 model 照抄）：
 //  1. 带 Description 全量描述——详情页要展示，列表页为控 payload 不带；

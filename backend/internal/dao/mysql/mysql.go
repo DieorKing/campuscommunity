@@ -17,7 +17,7 @@ var db *gorm.DB
 // cfg 由 conf.Conf.MySQLConfig 注入，字段来自 config.yaml 的 mysql 段。
 // 流程：拼 DSN → gorm.Open → 取底层 *sql.DB 设连接池 → ping 验证可用。
 // 失败返回 err，调用方（main.go）应 log.Fatal 退出，不可降级运行。
-// 注：阶段0 只负责连接初始化；AutoMigrate 留到阶段1 有 model 后再做。
+// 注：本文件只负责连接初始化；AutoMigrate 在 migrate.go 中执行。
 func Init(cfg *conf.MySQLConfig) (err error) {
 	// 拼接 DSN：username:password@tcp(host:port)/database?charset=utf8mb4&parseTime=true&loc=Local
 	// parseTime=true 让 MySQL 的 DATETIME 自动映射到 time.Time

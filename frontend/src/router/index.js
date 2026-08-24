@@ -18,7 +18,7 @@ const routes = [
     path: '/group-buys',
     name: 'GroupBuyList',
     component: () => import('../views/GroupBuyList.vue'),
-    meta: { requiresAuth: true }, // 首页（默认路由）；阶段3用真实拼单广场页面替换
+    meta: { requiresAuth: true }, // 首页（默认路由）；后续用真实拼单广场页面替换
   },
   {
     path: '/profile',

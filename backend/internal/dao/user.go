@@ -85,7 +85,7 @@ func UpdateUserProfile(userID int64, data map[string]any) error {
 	return nil
 }
 
-// UpdateUserAddress 更新收货地址（单字段，mvp §1.4）。
+// UpdateUserAddress 更新收货地址（单字段）。
 // 独立于 UpdateUserProfile：改地址是独立接口（PUT /user/address），
 // 单独的函数让每次更新只动一列，意图清晰且不会误碰资料字段。
 func UpdateUserAddress(userID int64, address string) error {

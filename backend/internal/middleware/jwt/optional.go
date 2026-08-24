@@ -18,7 +18,7 @@ import (
 // 而 is_joined 依赖当前登录用户的 user_id，只能从 token 取。
 // 为什么 token 无效也放行而不是拒绝：
 //   列表本身是公开资源，不因「一个坏 token」阻塞浏览（这是公开接口的容错语义）；
-//   若严格拒绝，前端 token 过期时会看到列表接口 401，与「未登录可浏览」的契约矛盾。
+//   若严格拒绝，前端 token 过期时会看到列表接口 401，与「未登录可浏览」的设计矛盾。
 //   注意取舍：坏 token 会被静默当匿名处理（is_joined 全 false），前端 token 失效后
 //   应自行跳转登录，由前端的 401 拦截器（或登录态校验）负责，而非本中间件。
 func JWTOptionalMiddleware() func(c *gin.Context) {

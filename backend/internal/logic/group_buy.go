@@ -68,13 +68,13 @@ func CreateGroupBuy(publisherID int64, p *model.ParamCreateGroupBuy) (int64, err
 		}
 		return 0, fmt.Errorf("logic: init group buy stock: %w", err)
 	}
-	// 5.5 热榜入榜：ZADD hot:rank:group_buy <good_id> 0（契约见 mvp §2.4）。
-	//     失败策略（2026-08-18 契约变更，分层失败策略）：
+	// 5.5 热榜入榜：ZADD hot:rank:group_buy <good_id> 0。
+	//     失败策略（分层失败策略）：
 	//     热榜是「展示数据」，允许短暂不准，不阻塞不回滚主流程——
 	//     发布的核心是「DB 记录 + stock 库存」已成功，不能因排行榜牺牲发布。
 	//     兜底：①查询时回表 MySQL 过滤非 recruiting 状态（不入榜不影响正确性）
-	//          ②服务启动时从 DB 重建热榜（见 mvp §2.4 重建兜底）
-	//     阶段 7：升级为补偿消息投递（带 retry_count 的专用队列），见 mvp §9。
+	//          ②服务启动时从 DB 重建热榜（重建兜底）
+	//     后续演进：升级为补偿消息投递（带 retry_count 的专用队列）。
 	if err := redis.ZAddHotRank(goodID, 0); err != nil {
 		// 只记错误日志，发布照常成功——数据分层：核心(库存/订单)原子，展示(热榜)最终一致
 		zap.L().Error("logic: zadd hot rank failed, publish continues (best-effort)",
@@ -175,14 +175,14 @@ func GroupBuyDetail(userID, goodID int64) (*model.GroupBuyDetail, error) {
 // normalizeListParam 列表参数归一化：page/page_size/sort 兜底到合法缺省值。
 // 为什么要归一化而不是直接 binding 校验拒绝：
 //   - 分页参数「没传」「传 0」「传负数」对用户语义相同（都用默认值），报参数错误反而苛刻；
-//   - page_size 上限 50 是契约红线（防止一次拉全表打爆 DB），超限必须压回 50 而非放行；
+//   - page_size 上限 50 是硬性上限（防止一次拉全表打爆 DB），超限必须压回 50 而非放行；
 //   - sort 白名单防止拼接任意字符串（本实现走常量分支无注入风险，白名单是防御纵深）。
 func normalizeListParam(p *model.ParamListGroupBuy) (page, pageSize int, sort string) {
 	// page 归一化：< 1 一律视为第 1 页（含缺省 0）
 	if p.Page < 1 {
 		p.Page = 1
 	}
-	// page_size 归一化：< 1 用默认 10；> 50 压回 50（契约上限，防大页拖库）
+	// page_size 归一化：< 1 用默认 10；> 50 压回 50（硬性上限，防大页拖库）
 	if p.PageSize < 1 {
 		p.PageSize = 10
 	}
@@ -196,14 +196,14 @@ func normalizeListParam(p *model.ParamListGroupBuy) (page, pageSize int, sort st
 	return p.Page, p.PageSize, p.Sort
 }
 
-// ListGroupBuy 拼单列表：latest 走 MySQL 分页，hot 走 Redis ZSet 热榜 + 回表（契约 mvp §2.4）。
+// ListGroupBuy 拼单列表：latest 走 MySQL 分页，hot 走 Redis ZSet 热榜 + 回表。
 // userID 为当前登录用户（来自 JWTOptional 中间件）；0 表示未登录（is_joined 恒 false）。
 // 两条路径的设计差异：
 //   - latest：单数据源。COUNT + LIMIT/OFFSET 直接出结果，total 精确。
 //   - hot：两段式。ZREVRANGE 出 Top N 个 good_id → MySQL IN 回表补详情 →
 //     过滤非 recruiting → 按热榜顺序重排。total 用 ZCARD 近似（含终态未 ZREM 的成员）。
 //
-// 参与标记（契约「登录后每项附加本人参与标记」）：登录时一次批量查 members 表，
+// 参与标记（登录后每项附加本人参与标记）：登录时一次批量查 members 表，
 // map O(1) 判断填充 is_joined——不逐项查库（10 项/页若逐项查就是 10 次 DB 往返）。
 func ListGroupBuy(userID int64, p *model.ParamListGroupBuy) (*model.ListResult, error) {
 	page, pageSize, sort := normalizeListParam(p)
@@ -265,7 +265,7 @@ func ListGroupBuy(userID int64, p *model.ParamListGroupBuy) (*model.ListResult, 
 	}
 	// 4. 过滤 + 按热榜顺序重排：
 	//    - DB IN 查询返回顺序不保证，必须按 ZREVRANGE 的顺序重排；
-	//    - 过滤非 recruiting（已终态但尚未 ZREM 的拼单不展示，mvp §2.4 契约）。
+	//    - 过滤非 recruiting（已终态但尚未 ZREM 的拼单不展示）。
 	//    实现：map[good_id]→GroupBuy 建索引，再按热榜顺序遍历取用——O(N) 重排。
 	gbMap := make(map[int64]model.GroupBuy, len(gbs))
 	for i := range gbs {
@@ -286,7 +286,7 @@ func ListGroupBuy(userID int64, p *model.ParamListGroupBuy) (*model.ListResult, 
 		if !ok {
 			continue // DB 已删但 ZSet 残留（发布回滚未清理干净）——跳过，数据最终一致
 		}
-		// 过滤非 recruiting（已终态但尚未 ZREM 的拼单不展示，mvp §2.4 契约）。
+		// 过滤非 recruiting（已终态但尚未 ZREM 的拼单不展示）。
 		if gb.Status != model.GroupBuyRecruiting {
 			continue // 终态过滤：热榜只展示进行中的拼单（full/succeeded/failed/expired 均不展示）
 		}
