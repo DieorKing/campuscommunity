@@ -104,8 +104,8 @@ func GrabGroupBuy(userID, goodID int64) (*model.GrabResult, error) {
 	// 分层失败策略的核心落点：投递失败【不回滚预扣、不返回错误】。
 	// 原因（网络二义性）：无法区分「消息没出去 / 确认丢失 / 真丢了」——
 	// 若回滚库存而消息其实已到达，消费者建单后名额被他人再抢 = 一个名额两份订单（超卖）。
-	// 宁可少卖（可对账修复），不可超卖（不可逆）。丢失的兜底：producer confirm 加固 +
-	// error 日志人工对账（规划中）。
+	// 宁可少卖（可对账修复），不可超卖（不可逆）。丢失的兜底：error 日志
+	// 人工对账（补偿任务自动重发为既定演进方向）。
 	if err := mq.PublishGrabOrder(goodID, userID); err != nil {
 		zap.L().Error("logic: publish grab order failed, pre-deduct kept (no rollback)",
 			zap.Int64("good_id", goodID), zap.Int64("user_id", userID), zap.Error(err))

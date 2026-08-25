@@ -39,7 +39,7 @@ const orderCloseDelay = 30 * time.Minute
 //
 // 失败处理：best-effort——延时任务属派生数据（订单表 status 本身就是
 // 关单判定的真值源，ZSet 只是「到点提醒」的索引），丢失的兜底是补偿任务
-// （全表扫描 pending_pay 超时订单补偿关闭，规划中）。logic 层调用失败
+// （全表扫描 pending_pay 超时订单补偿关闭，同属演进路径）。logic 层调用失败
 // 仅记 error 日志，不回滚已提交的建单事务（核心事实优先，派生数据靠补偿）。
 func EnqueueOrderClose(orderID int64) error {
 	// 到期时间 = 当前时间 + 30min；Unix() 取秒级时间戳作 score

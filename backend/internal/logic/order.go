@@ -58,7 +58,8 @@ var (
 //  4. dao.CreateOrderTx 四写合一（订单+签到簿+人数+状态翻转，同一事务）。
 //     撞 uk_user_good → dao.ErrDuplicateEntry 原样上抛（消费者翻译为
 //     「重复消息的成功证明」→ ack）。
-//  5. 事务外 best-effort：ZINCRBY 热榜 / ZADD 延时关单 /（通知待接入）。
+//  5. 事务外 best-effort：ZINCRBY 热榜 / ZADD 延时关单（通知投递为
+//     本编排的既定扩展点，挂在同一位置）。
 //     派生数据失败仅记 error 日志，绝不回滚已提交的事务、绝不让消费者
 //     nack（重建成本低：热榜可从订单表重算，延时任务有补偿兜底）。
 //
@@ -129,7 +130,7 @@ func CreateOrderByMessage(goodID, userID int64) (*dao.OrderCreateResult, error) 
 		zap.L().Error("logic: enqueue order close failed, order kept (best-effort)",
 			zap.Int64("order_id", order.OrderID), zap.Error(err))
 	}
-	// 5c. 通知投递（待接入）：订单待支付 +（若 res.BecameSucceeded）拼单已成团
+	// 5c. 通知投递扩展点：订单待支付 +（若 res.BecameSucceeded）拼单已成团
 	//     BecameSucceeded 的 RowsAffected 选主保证成团通知全场只发一次
 
 	return res, nil
@@ -172,7 +173,7 @@ func PayOrder(userID, orderID int64) error {
 		zap.L().Error("logic: remove order close task failed, harmless (state machine guards)",
 			zap.Int64("order_id", orderID), zap.Error(err))
 	}
-	// 4. 通知投递（待接入）：「已支付」
+	// 4. 通知投递扩展点：「已支付」
 	return nil
 }
 
@@ -218,7 +219,7 @@ func CancelOrder(userID, orderID int64) error {
 		zap.L().Error("logic: remove order close task failed, harmless (state machine guards)",
 			zap.Int64("order_id", orderID), zap.Error(err))
 	}
-	// 5. 通知投递（待接入）：「已取消」
+	// 5. 通知投递扩展点：「已取消」
 	return nil
 }
 

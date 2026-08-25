@@ -74,7 +74,7 @@ func CreateGroupBuy(publisherID int64, p *model.ParamCreateGroupBuy) (int64, err
 	//     发布的核心是「DB 记录 + stock 库存」已成功，不能因排行榜牺牲发布。
 	//     兜底：①查询时回表 MySQL 过滤非 recruiting 状态（不入榜不影响正确性）
 	//          ②服务启动时从 DB 重建热榜（重建兜底）
-	//     后续演进：升级为补偿消息投递（带 retry_count 的专用队列）。
+	//     生产化升级路径：补偿消息投递（带 retry_count 的专用队列）。
 	if err := redis.ZAddHotRank(goodID, 0); err != nil {
 		// 只记错误日志，发布照常成功——数据分层：核心(库存/订单)原子，展示(热榜)最终一致
 		zap.L().Error("logic: zadd hot rank failed, publish continues (best-effort)",

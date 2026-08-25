@@ -83,6 +83,9 @@ func main() {
 	// 启动建单消费者：独立 goroutine 长驻——Consume 阻塞等投递，
 	// 不能占用 HTTP 主协程；QoS=1 + 手动 ack + 失败分类见 consumer_order.go
 	go mq.ConsumeGrabOrder()
+	// 启动延时任务扫描器：订单超时关闭 + 拼单截止判定
+	// （10s 一轮独立 goroutine，随进程退出；未处理任务留在 ZSet，重启补扫）
+	go logic.StartDelayScanner()
 	// 注册路由
 	r := router.SetupRouter(conf.Conf.Mode)
 	err := r.Run(fmt.Sprintf(":%d", conf.Conf.Port))

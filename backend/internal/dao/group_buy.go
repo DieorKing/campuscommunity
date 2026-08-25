@@ -114,6 +114,41 @@ func ListGroupBuyMembersByGoodID(goodID int64) ([]model.GroupBuyMember, error) {
 	return members, nil
 }
 
+// JudgeExpiredGroupBuys 拼单截止判定（两条互斥的条件 UPDATE）。
+// 正常时序下人数达 min 的拼单在建单事务里已翻 succeeded，截止时仍
+// recruiting 的行只剩 failed 分支；第二条 UPDATE 防御性覆盖「翻漏」的行
+// （如终态不计数导致的人数滞后），补翻 succeeded。
+// 两条 WHERE 以 current_members 与 min 的关系互斥，同轮不会双翻。
+// 幂等性：WHERE status='recruiting' —— 已翻过的行 rows=0 落空，
+// 状态本身就是「扫过」的持久化标记，多轮扫描天然幂等，无需去重位。
+// 返回 (failed数, succeeded数) 供日志观察。
+// 注：终态拼单的热榜 ZREM 不在此处做——查询侧回表过滤已保证终态不展示，
+// ZREM 属体积优化，非正确性依赖。
+func JudgeExpiredGroupBuys() (failed, succeeded int64, err error) {
+	db := mysql.GetDB()
+	// 分支1：截止且人数不足 → failed（拼单失败，名额不退——钱没付过，
+	// 但 Redis stock 的残留由守恒式记账兜底：占用在预扣时已扣，拼单终态
+	// 后入口拦截，不再产生新占用）
+	r := db.Model(&model.GroupBuy{}).
+		Where("status = ? AND deadline < NOW() AND current_members < min_members",
+			model.GroupBuyRecruiting).
+		Update("status", model.GroupBuyFailed)
+	if r.Error != nil {
+		return 0, 0, fmt.Errorf("dao: judge expired group buys (failed): %w", r.Error)
+	}
+	failed = r.RowsAffected
+	// 分支2：截止但人数已足（防御性补翻）→ succeeded
+	r = db.Model(&model.GroupBuy{}).
+		Where("status = ? AND deadline < NOW() AND current_members >= min_members",
+			model.GroupBuyRecruiting).
+		Update("status", model.GroupBuySucceeded)
+	if r.Error != nil {
+		return 0, 0, fmt.Errorf("dao: judge expired group buys (succeeded): %w", r.Error)
+	}
+	succeeded = r.RowsAffected
+	return failed, succeeded, nil
+}
+
 // GetUserJoinedGoodIDs 查询用户在给定拼单集合中已参与的 good_id 集合。
 // 用途：列表/详情接口的「本人参与标记」（登录后每项附加参与标记）。
 // 返回 map[good_id]bool 而非 []int64：调用方组装列表时 O(1) 判断某拼单是否参与，

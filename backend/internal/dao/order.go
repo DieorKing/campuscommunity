@@ -26,6 +26,10 @@ const mysqlDupEntryErrNum = 1062
 // 驱动错误类型被留在 dao 层内部，上层不感知 MySQL 协议细节。
 var ErrDuplicateEntry = errors.New("记录已存在")
 
+// errCloseSkip 关单落空信号（已支付/已取消/订单不存在）：触发事务回滚，
+// 事务外翻译为 closed=false——调用方据此移除任务，不再重试（包私有）。
+var errCloseSkip = errors.New("dao: close skipped by state machine or not exist")
+
 // OrderCreateResult 建单事务的结果报告：错误之外需要上抛的全部业务事实。
 // 三个布尔各回答一个独立问题，调用方（logic）据此决定事务外的连带动作。
 type OrderCreateResult struct {
@@ -268,6 +272,60 @@ func CancelOrderTx(orderID, userID int64) (int64, bool, error) {
 // errCancelRejected CancelOrderTx 内部哨兵：状态机拒绝信号，触发事务回滚，
 // 事务外翻译为 (false, nil) 返回——不对外暴露（包私有）。
 var errCancelRejected = errors.New("dao: cancel rejected by state machine")
+
+// CloseExpiredOrder 超时关单事务（置 closed + current_members-1 同事务）。
+// 与 CancelOrderTx 同构：同一个业务事实「一个名额被释放」的两个侧面，
+// 区别仅在触发方（延时扫描器 vs 用户）与终态（closed vs cancelled）。
+// 入参只有 orderID（扫描器从 ZSet 拿到的就是它）；userID/goodID 由本函数
+// 查出后返回，供调用方释放 Redis 名额（SREM members 需要 user_id）。
+// 状态守卫 WHERE status='pending_pay'：已支付（29:59 完成支付的竞态赢家）/
+// 已取消的订单 rows=0 落空，整体无副作用——与支付的条件 UPDATE 互为
+// 「行锁 + WHERE 守卫」双保险的对手方。
+// 返回：(goodID, userID, true, nil) = 关单成功；(0, 0, false, nil) =
+// 状态机落空或订单不存在；err 仅 DB 故障（调用方保留任务下轮重试）。
+func CloseExpiredOrder(orderID int64) (goodID, userID int64, closed bool, err error) {
+	err = mysql.GetDB().Transaction(func(tx *gorm.DB) error {
+		var order model.Order
+		if err := tx.Where("order_id = ?", orderID).First(&order).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return errCloseSkip // 订单不存在：无单可关，事务外视为落空
+			}
+			return err
+		}
+		// 写1：条件 UPDATE 关单（closed_at 取 DB 时钟，同 paid_at 的口径）
+		r := tx.Model(&model.Order{}).
+			Where("order_id = ? AND status = ?", orderID, model.OrderPendingPay).
+			Updates(map[string]any{
+				"status":    model.OrderClosed,
+				"closed_at": gorm.Expr("NOW()"),
+			})
+		if r.Error != nil {
+			return r.Error
+		}
+		if r.RowsAffected == 0 {
+			return errCloseSkip // 已支付/已取消：竞态输家，落空退出
+		}
+		// 写2：拼单人数 -1（同一业务事实的另一侧面，与取消路径同构）。
+		// 成团状态不回退：既成事实结论不被迟到事件改写
+		r2 := tx.Model(&model.GroupBuy{}).
+			Where("good_id = ? AND current_members > 0", order.GoodID).
+			Update("current_members", gorm.Expr("current_members - 1"))
+		if r2.Error != nil {
+			return r2.Error
+		}
+		goodID, userID = order.GoodID, order.UserID
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, errCloseSkip) {
+			return 0, 0, false, nil
+		}
+		return 0, 0, false, fmt.Errorf("dao: close expired order: %w", err)
+	}
+	return goodID, userID, true, nil
+}
+
+
 
 // ListOrdersByUserPage 按用户分页查询订单（按用户、状态筛选，分页）。
 // status 为空 = 全部状态；非空时精确匹配（user_id 有索引，组合
