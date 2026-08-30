@@ -233,7 +233,7 @@ func CancelOrderTx(orderID, userID int64) (int64, bool, error) {
 			First(&order).Error; err != nil {
 			return err // ErrRecordNotFound 透传，事务外翻译为哨兵
 		}
-		goodID = order.GoodID
+		goodID = order.GoodID.Int64()
 		r := tx.Model(&model.Order{}).
 			Where("order_id = ? AND status = ?", orderID, model.OrderPendingPay).
 			Update("status", model.OrderCancelled)
@@ -313,7 +313,7 @@ func CloseExpiredOrder(orderID int64) (goodID, userID int64, closed bool, err er
 		if r2.Error != nil {
 			return r2.Error
 		}
-		goodID, userID = order.GoodID, order.UserID
+		goodID, userID = order.GoodID.Int64(), order.UserID.Int64()
 		return nil
 	})
 	if err != nil {
@@ -324,8 +324,6 @@ func CloseExpiredOrder(orderID int64) (goodID, userID int64, closed bool, err er
 	}
 	return goodID, userID, true, nil
 }
-
-
 
 // ListOrdersByUserPage 按用户分页查询订单（按用户、状态筛选，分页）。
 // status 为空 = 全部状态；非空时精确匹配（user_id 有索引，组合

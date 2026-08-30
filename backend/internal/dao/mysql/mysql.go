@@ -3,6 +3,7 @@ package mysql
 import (
 	"campuscommunity/internal/conf"
 	"fmt"
+	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -43,9 +44,22 @@ func Init(cfg *conf.MySQLConfig) (err error) {
 	if err != nil {
 		return fmt.Errorf("get underlying *sql.DB: %w", err)
 	}
-	// 连接池：只设上下限
+	// 连接池三参数（压测调优：负缩放的主因是空闲连接不足引发的连接风暴——
+	// 高频短查询下重新建连（TCP+MySQL 认证握手）的开销远大于查询本身）：
+	//   MaxOpen：并发上限，超出排队
+	//   MaxIdle ≈ MaxOpen：归还的连接全部保活，杜绝「用完即关、下波重建」的
+	//     连接风暴——用少量常驻内存（每连接 ~1MB）换建连开销与 TIME_WAIT 堆积
+	//   ConnMaxLifetime：连接最长寿命，到期主动换新——防长命连接被 MySQL
+	//     wait_timeout 悄悄杀掉后出现「使用已关闭连接」的诡异错误
 	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
+	if cfg.ConnMaxLifetime != "" {
+		lifetime, err := time.ParseDuration(cfg.ConnMaxLifetime)
+		if err != nil {
+			return fmt.Errorf("parse conn_max_lifetime: %w", err)
+		}
+		sqlDB.SetConnMaxLifetime(lifetime)
+	}
 
 	// ping验证连接真正可用
 	if err = sqlDB.Ping(); err != nil {

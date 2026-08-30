@@ -57,7 +57,7 @@ func GrabGroupBuy(userID, goodID int64) (*model.GrabResult, error) {
 		return nil, ErrGroupBuyExpired
 	}
 	// 发布者校验：业务红线——发布者不能参与自己的拼单
-	if gb.PublisherID == userID {
+	if gb.PublisherID.Int64() == userID {
 		return nil, ErrGrabPublisher
 	}
 

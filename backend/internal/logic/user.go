@@ -47,7 +47,7 @@ func SignUp(p *model.ParamRegister) error {
 	// 4. 组装用户：user_id 用雪花算法生成（对外暴露的业务主键），
 	//    昵称默认取用户名，避免新用户在列表页展示为空
 	user := &model.User{
-		UserID:   snowflake.GenID(),
+		UserID:   model.ID(snowflake.GenID()),
 		Username: p.Username,
 		Password: hash,
 		Nickname: p.Username,
@@ -80,7 +80,7 @@ func Login(p *model.ParamLogin) (string, error) {
 		return "", ErrWrongLogin
 	}
 	// 4. 签发 JWT：payload 仅含 user_id + exp + iss
-	token, err := jwt.GenToken(user.UserID)
+	token, err := jwt.GenToken(user.UserID.Int64())
 	if err != nil {
 		return "", fmt.Errorf("logic: login gen token: %w", err)
 	}

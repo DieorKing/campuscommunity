@@ -27,8 +27,8 @@ const (
 // Redis 预扣的 stock = max_members - current_members（发布时初始化）。
 type GroupBuy struct {
 	BaseModel
-	GoodID         int64          `gorm:"uniqueIndex;not null;comment:业务主键(雪花)" json:"good_id"`
-	PublisherID    int64          `gorm:"index;not null;comment:发布者(引用users.user_id)" json:"publisher_id"`
+	GoodID         ID             `gorm:"uniqueIndex;not null;comment:业务主键(雪花)" json:"good_id"`
+	PublisherID    ID             `gorm:"index;not null;comment:发布者(引用users.user_id)" json:"publisher_id"`
 	Title          string         `gorm:"type:varchar(100);not null;comment:商品名称" json:"title"`
 	Description    string         `gorm:"type:text;comment:描述" json:"description"`
 	Price          float64        `gorm:"type:decimal(10,2);not null;comment:单价" json:"price"`
@@ -47,8 +47,8 @@ type GroupBuy struct {
 // joined_at 字段已省略：成员记录创建时刻即加入时刻，BaseModel.CreatedAt 语义相同，不冗余存两列。
 type GroupBuyMember struct {
 	BaseModel
-	MemberID int64 `gorm:"uniqueIndex;not null;comment:业务主键(雪花)" json:"member_id"`
+	MemberID ID `gorm:"uniqueIndex;not null;comment:业务主键(雪花)" json:"member_id"`
 	// uniqueIndex:uk_good_user 两字段同名索引 = 复合唯一索引 (good_id, user_id)
-	GoodID int64 `gorm:"uniqueIndex:uk_good_user;not null;comment:关联拼单(引用group_buys.good_id)" json:"good_id"`
-	UserID int64 `gorm:"uniqueIndex:uk_good_user;not null;comment:参与用户(引用users.user_id)" json:"user_id"`
+	GoodID ID `gorm:"uniqueIndex:uk_good_user;not null;comment:关联拼单(引用group_buys.good_id)" json:"good_id"`
+	UserID ID `gorm:"uniqueIndex:uk_good_user;not null;comment:参与用户(引用users.user_id)" json:"user_id"`
 }

@@ -31,9 +31,10 @@ type MySQLConfig struct {
 	Charset      string `mapstructure:"charset"`
 	Loc          string `mapstructure:"loc"`
 	Port         int    `mapstructure:"port"`
-	MaxOpenConns int    `mapstructure:"max_open_conns"`
-	MaxIdleConns int    `mapstructure:"max_idle_conns"`
-	ParseTime    bool   `mapstructure:"parse_time"`
+	MaxOpenConns    int    `mapstructure:"max_open_conns"`
+	MaxIdleConns    int    `mapstructure:"max_idle_conns"`
+	ConnMaxLifetime string `mapstructure:"conn_max_lifetime"` // 单条连接最长存活时间（如 "1h"），防止被 MySQL wait_timeout 悄悄杀掉
+	ParseTime       bool   `mapstructure:"parse_time"`
 }
 
 type RedisConfig struct {

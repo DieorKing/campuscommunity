@@ -69,10 +69,21 @@ func SetupRouter(mode string) *gin.Engine {
 	orderGroup := v1.Group("/order")
 	orderGroup.Use(jwtmid.JWTAuthMiddleware())
 	{
-		orderGroup.POST("/:id/pay", controller.PayHandler)         // 模拟支付（状态机守卫）
-		orderGroup.POST("/:id/cancel", controller.CancelHandler)   // 仅 pending_pay 可取消
-		orderGroup.GET("/list", controller.ListOrdersHandler)      // 我的订单（状态筛选+分页）
-		orderGroup.GET("/:id", controller.OrderDetailHandler)      // 订单详情（所有权校验）
+		orderGroup.POST("/:id/pay", controller.PayHandler)       // 模拟支付（状态机守卫）
+		orderGroup.POST("/:id/cancel", controller.CancelHandler) // 仅 pending_pay 可取消
+		orderGroup.GET("/list", controller.ListOrdersHandler)    // 我的订单（状态筛选+分页）
+		orderGroup.GET("/:id", controller.OrderDetailHandler)    // 订单详情（所有权校验）
+	}
+
+	// 通知模块：列表 + 标记已读（挂 JWT 强制鉴权——通知是私产，
+	// 列表/已读都依赖确定的 userID 做归属，匿名无意义）。
+	// 路由树：/list（静态段）与 /:id/read（参数段）同位共存，Gin 静态优先
+	//（与 group-buy/order 同款）。
+	notificationGroup := v1.Group("/notification")
+	notificationGroup.Use(jwtmid.JWTAuthMiddleware())
+	{
+		notificationGroup.GET("/list", controller.ListNotificationsHandler)        // 我的通知（30s 轮询数据源，列表+未读一次返回）
+		notificationGroup.POST("/:id/read", controller.MarkNotificationReadHandler) // 标记已读（幂等：已读再标成功）
 	}
 
 	if mode == gin.DebugMode {

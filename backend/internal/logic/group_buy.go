@@ -42,8 +42,8 @@ func CreateGroupBuy(publisherID int64, p *model.ParamCreateGroupBuy) (int64, err
 	// 3. 组装拼单实体：业务主键 GoodID 用雪花算法生成（对外暴露、分布式唯一），
 	//    发布者 publisherID 由 JWT 注入，状态默认 recruiting、参与人数默认 0（DB 默认值）。
 	gb := &model.GroupBuy{
-		GoodID:      snowflake.GenID(),
-		PublisherID: publisherID,
+		GoodID:      model.ID(snowflake.GenID()),
+		PublisherID: model.ID(publisherID),
 		Title:       p.Title,
 		Description: p.Description,
 		Price:       p.Price,
@@ -110,7 +110,7 @@ func GroupBuyDetail(userID, goodID int64) (*model.GroupBuyDetail, error) {
 	// 3. 收集 user_id → IN 批查用户（1 次往返代替 N 次）
 	userIDs := make([]int64, 0, len(members))
 	for i := range members {
-		userIDs = append(userIDs, members[i].UserID)
+		userIDs = append(userIDs, members[i].UserID.Int64())
 	}
 	// members 为空时 userIDs 是空切片，GetUsersByUserIDs 内部短路不发 SQL
 	users, err := dao.GetUsersByUserIDs(userIDs)
@@ -121,7 +121,7 @@ func GroupBuyDetail(userID, goodID int64) (*model.GroupBuyDetail, error) {
 	//    组装时按 members 的时间顺序遍历，从 map 取用户——两份数据各管各的顺序。
 	userMap := make(map[int64]model.User, len(users))
 	for i := range users {
-		userMap[users[i].UserID] = users[i]
+		userMap[users[i].UserID.Int64()] = users[i]
 	}
 	// 5. 组装参与人员列表：is_joined 在同一循环内顺手推导——
 	//    成员列表已在手，「当前用户在不在里面」是一次内存比对，省掉一次 DB 查询。
@@ -129,10 +129,10 @@ func GroupBuyDetail(userID, goodID int64) (*model.GroupBuyDetail, error) {
 	isJoined := false
 	for i := range members {
 		m := &members[i]
-		if m.UserID == userID {
+		if m.UserID.Int64() == userID {
 			isJoined = true
 		}
-		u, ok := userMap[m.UserID]
+		u, ok := userMap[m.UserID.Int64()]
 		if !ok {
 			// members 引用的用户已不存在（脏数据/物理删除）——跳过该成员继续组装，
 			// 不让一条脏数据把整个详情页打挂成 500。
@@ -155,7 +155,7 @@ func GroupBuyDetail(userID, goodID int64) (*model.GroupBuyDetail, error) {
 	// 6. 组装详情 DTO：is_publisher 同样是零成本比对（gb.PublisherID vs userID）。
 	//    注意 Members 用 items（已剔除脏数据），保持 JSON 输出干净。
 	return &model.GroupBuyDetail{
-		GoodID:         gb.GoodID,
+		GoodID:         gb.GoodID, // 同类型直传（ID → ID）
 		Title:          gb.Title,
 		Description:    gb.Description,
 		Price:          gb.Price,
@@ -167,7 +167,7 @@ func GroupBuyDetail(userID, goodID int64) (*model.GroupBuyDetail, error) {
 		Status:         gb.Status,
 		CreatedAt:      gb.CreatedAt,
 		IsJoined:       isJoined,
-		IsPublisher:    gb.PublisherID == userID,
+		IsPublisher:    gb.PublisherID.Int64() == userID,
 		Members:        items,
 	}, nil
 }
@@ -223,7 +223,7 @@ func ListGroupBuy(userID int64, p *model.ParamListGroupBuy) (*model.ListResult, 
 		items := make([]model.GroupBuyItem, 0, len(gbs))
 		for i := range gbs {
 			item := toGroupBuyItem(&gbs[i], 0)
-			item.IsJoined = joined[gbs[i].GoodID]
+			item.IsJoined = joined[gbs[i].GoodID.Int64()]
 			items = append(items, item)
 		}
 		return &model.ListResult{
@@ -269,7 +269,7 @@ func ListGroupBuy(userID int64, p *model.ParamListGroupBuy) (*model.ListResult, 
 	//    实现：map[good_id]→GroupBuy 建索引，再按热榜顺序遍历取用——O(N) 重排。
 	gbMap := make(map[int64]model.GroupBuy, len(gbs))
 	for i := range gbs {
-		gbMap[gbs[i].GoodID] = gbs[i]
+		gbMap[gbs[i].GoodID.Int64()] = gbs[i]
 	}
 	// 登录态：批量查参与集（对回表结果整体查，含被过滤项也没关系——map 查询多几项无成本）
 	joined, err := buildJoinedMap(userID, gbs)
@@ -291,7 +291,7 @@ func ListGroupBuy(userID int64, p *model.ParamListGroupBuy) (*model.ListResult, 
 			continue // 终态过滤：热榜只展示进行中的拼单（full/succeeded/failed/expired 均不展示）
 		}
 		item := toGroupBuyItem(&gb, z.Score)
-		item.IsJoined = joined[gb.GoodID]
+		item.IsJoined = joined[gb.GoodID.Int64()]
 		items = append(items, item)
 	}
 	// 5. total 用 ZCARD 近似（含终态，≥ 实际可见数；前端仅用于「有无下一页」判断）
@@ -317,7 +317,7 @@ func buildJoinedMap(userID int64, gbs []model.GroupBuy) (map[int64]bool, error) 
 	}
 	goodIDs := make([]int64, 0, len(gbs))
 	for i := range gbs {
-		goodIDs = append(goodIDs, gbs[i].GoodID)
+		goodIDs = append(goodIDs, gbs[i].GoodID.Int64())
 	}
 	joined, err := dao.GetUserJoinedGoodIDs(userID, goodIDs)
 	if err != nil {

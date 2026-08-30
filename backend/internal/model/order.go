@@ -30,11 +30,11 @@ const (
 // order_id 即订单号（雪花生成），对外暴露。
 type Order struct {
 	BaseModel
-	OrderID int64 `gorm:"uniqueIndex;not null;comment:业务主键(雪花,即订单号)" json:"order_id"`
+	OrderID ID `gorm:"uniqueIndex;not null;comment:业务主键(雪花,即订单号)" json:"order_id"`
 	// uk_user_good 复合唯一 = 防重复下单 DB 兜底（与 members 表的去重双保险）；
 	// 单独 index 用于「按用户查订单列表」的高频查询路径。
-	UserID  int64       `gorm:"uniqueIndex:uk_user_good;index;not null;comment:下单用户(引用users.user_id)" json:"user_id"`
-	GoodID  int64       `gorm:"uniqueIndex:uk_user_good;index;not null;comment:关联拼单(引用group_buys.good_id)" json:"good_id"`
+	UserID  ID          `gorm:"uniqueIndex:uk_user_good;index;not null;comment:下单用户(引用users.user_id)" json:"user_id"`
+	GoodID  ID          `gorm:"uniqueIndex:uk_user_good;index;not null;comment:关联拼单(引用group_buys.good_id)" json:"good_id"`
 	Amount  float64     `gorm:"type:decimal(10,2);not null;comment:金额(拼单price快照)" json:"amount"`
 	Address string      `gorm:"type:varchar(255);comment:下单时地址快照" json:"address"`
 	Status  OrderStatus `gorm:"type:varchar(20);index;not null;default:pending_pay;comment:订单状态" json:"status"`

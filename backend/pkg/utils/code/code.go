@@ -31,6 +31,9 @@ const (
 	//订单模块
 	CodeOrderNotExist      ResCode = 30001 //订单不存在
 	CodeOrderStatusChanged ResCode = 30002 //订单状态已变更（状态机拒绝：双击支付/已支付后取消）
+
+	//通知模块
+	CodeNotificationNotExist ResCode = 40001 //通知不存在
 )
 
 var codeMesMap = map[ResCode]string{
@@ -56,6 +59,8 @@ var codeMesMap = map[ResCode]string{
 
 	CodeOrderNotExist:      "订单不存在",
 	CodeOrderStatusChanged: "订单状态已变更，请刷新后重试",
+
+	CodeNotificationNotExist: "通知不存在",
 }
 
 func (c ResCode) Msg() string {

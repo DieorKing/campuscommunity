@@ -41,7 +41,7 @@ type ParamListGroupBuy struct {
 //     直接复用该字段名即可，但热榜项要额外带 hot_score——model 层没有该字段；
 //  3. 分层约定：model 是 DB 映射（对内），DTO 是 API 形状（对外），两者解耦后互不牵连。
 type GroupBuyItem struct {
-	GoodID         int64          `json:"good_id"` // 业务主键，前端跳详情用
+	GoodID         ID             `json:"good_id"` // 业务主键，前端跳详情用
 	Title          string         `json:"title"`
 	Price          float64        `json:"price"`
 	MinMembers     int            `json:"min_members"`
@@ -73,7 +73,7 @@ type ListResult struct {
 //  2. 带 Members 参与人员列表（含昵称/头像，跨表组装的结果）；
 //  3. 带 IsJoined/IsPublisher 本人视角字段——前端据此渲染按钮态（未参与可抢/已参与禁用/发布者禁用）。
 type GroupBuyDetail struct {
-	GoodID         int64          `json:"good_id"`
+	GoodID         ID             `json:"good_id"`
 	Title          string         `json:"title"`
 	Description    string         `json:"description"`
 	Price          float64        `json:"price"`
@@ -93,7 +93,7 @@ type GroupBuyDetail struct {
 // 昵称/头像不在 members 表（只有 user_id），由 logic 层 IN 批查 users 后组装——
 // JoinedAt 直接用成员记录的 CreatedAt（加入时刻即创建时刻，建表时已决策不冗余 joined_at 列）。
 type MemberItem struct {
-	UserID   int64     `json:"user_id"`
+	UserID   ID        `json:"user_id"`
 	Nickname string    `json:"nickname"` // logic 层已做兜底：昵称为空回退 username，前端拿来即用
 	Avatar   string    `json:"avatar"`
 	JoinedAt time.Time `json:"joined_at"` // 加入时间（= group_buy_members.created_at）

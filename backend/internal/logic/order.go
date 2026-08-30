@@ -9,6 +9,7 @@ import (
 	"campuscommunity/internal/dao"
 	"campuscommunity/internal/dao/redis"
 	"campuscommunity/internal/model"
+	"campuscommunity/internal/mq"
 	"campuscommunity/pkg/utils/snowflake"
 	"errors"
 	"fmt"
@@ -90,17 +91,17 @@ func CreateOrderByMessage(goodID, userID int64) (*dao.OrderCreateResult, error) 
 
 	// ---- 第 3 步：装配订单与签到簿（纯内存操作，无 IO） ----
 	order := &model.Order{
-		OrderID: snowflake.GenID(),     // 业务主键（订单号，对外暴露）
-		UserID:  userID,                // 订单归属者
-		GoodID:  goodID,                // 关联拼单
-		Amount:  gb.Price,              // 金额快照：下单时刻拼单价（存根语义，发布后不可改）
-		Address: user.Address,          // 地址快照：用户当前地址（下单时地址的正解）
-		Status:  model.OrderPendingPay, // 初始状态：待支付（30min 不付→closed）
+		OrderID: model.ID(snowflake.GenID()), // 业务主键（订单号，对外暴露）
+		UserID:  model.ID(userID),            // 订单归属者
+		GoodID:  model.ID(goodID),            // 关联拼单
+		Amount:  gb.Price,                    // 金额快照：下单时刻拼单价（存根语义，发布后不可改）
+		Address: user.Address,                // 地址快照：用户当前地址（下单时地址的正解）
+		Status:  model.OrderPendingPay,       // 初始状态：待支付（30min 不付→closed）
 	}
 	member := &model.GroupBuyMember{
-		MemberID: snowflake.GenID(), // 签到簿行主键（雪花，与 order_id 各自独立生成）
-		GoodID:   goodID,
-		UserID:   userID,
+		MemberID: model.ID(snowflake.GenID()), // 签到簿行主键（雪花，与 order_id 各自独立生成）
+		GoodID:   model.ID(goodID),
+		UserID:   model.ID(userID),
 	}
 
 	// ---- 第 4 步：事务四写合一（幂等入口：撞唯一索引 → ErrDuplicateEntry） ----
@@ -116,7 +117,7 @@ func CreateOrderByMessage(goodID, userID int64) (*dao.OrderCreateResult, error) 
 	if !res.Counted {
 		zap.L().Warn("logic: order created on terminal group buy, members not counted",
 			zap.Int64("good_id", goodID), zap.Int64("user_id", userID),
-			zap.Int64("order_id", order.OrderID))
+			zap.Int64("order_id", order.OrderID.Int64()))
 	}
 
 	// ---- 第 5 步：事务外 best-effort（派生数据，失败仅记日志） ----
@@ -126,12 +127,38 @@ func CreateOrderByMessage(goodID, userID int64) (*dao.OrderCreateResult, error) 
 			zap.Int64("good_id", goodID), zap.Error(err))
 	}
 	// 5b. 延时关单入队：now+30min 到期，延时扫描器捞取关闭
-	if err := redis.EnqueueOrderClose(order.OrderID); err != nil {
+	if err := redis.EnqueueOrderClose(order.OrderID.Int64()); err != nil {
 		zap.L().Error("logic: enqueue order close failed, order kept (best-effort)",
-			zap.Int64("order_id", order.OrderID), zap.Error(err))
+			zap.Int64("order_id", order.OrderID.Int64()), zap.Error(err))
 	}
-	// 5c. 通知投递扩展点：订单待支付 +（若 res.BecameSucceeded）拼单已成团
-	//     BecameSucceeded 的 RowsAffected 选主保证成团通知全场只发一次
+	// 5c. 通知投递（挂尾部 best-effort）：「订单待支付」。
+	//     内容组装在事件现场——此刻上下文最全：拼单标题 gb.Title、金额快照
+	//     order.Amount、订单号 order.OrderID 全在手，通知消费者无需回表。
+	//     幂等键 (user_id, category, ref_id=order_id)：一单一条待支付通知，
+	//     重复投递由消费端唯一索引兜底。
+	//     （成团通知 BecameSucceeded 的多人批量投递属拼单类挂载点）
+	notifyBestEffort(mq.NotificationMessage{
+		UserID:   userID,
+		Type:     string(model.NotifyOrder),
+		Category: string(model.CategoryPendingPay),
+		RefID:    order.OrderID.Int64(),
+		Title:    "订单待支付",
+		Content: fmt.Sprintf("您参与的拼单「%s」下单成功，金额 ¥%.2f，请在 30 分钟内完成支付",
+			gb.Title, order.Amount),
+	})
+
+	// 5d. 成团批量通知（挂尾部 best-effort，与 5c 同款姿势）。
+	//     res.BecameSucceeded 的 RowsAffected 选主保证全场只此一人投递
+	//     （并发消费者中恰好把人数推到 min 的那次事务得 rows=1）；
+	//     gb 是事务前的快照，但 Title/PublisherID/GoodID 不可变（发布后
+	//     无修改入口），快照读安全。收件人 = 签到成员 + 发布者
+	//     （notifyGroupBuyEvent 注释有完整边界决策）。
+	//     幂等兜底：撞 (user, succeeded, good_id) 唯一索引静默 ack——
+	//     即便重投/补翻场景重复发送，每人最多一条成团通知。
+	if res.BecameSucceeded {
+		notifyGroupBuyEvent(gb, model.CategorySucceeded, "拼单已成团",
+			fmt.Sprintf("您参与的拼单「%s」已成团，最低人数已凑齐，请尽快完成支付", gb.Title))
+	}
 
 	return res, nil
 }
@@ -150,7 +177,7 @@ func PayOrder(userID, orderID int64) error {
 	if order == nil {
 		return ErrOrderNotExist
 	}
-	if order.UserID != userID {
+	if order.UserID.Int64() != userID {
 		return ErrOrderNotOwner
 	}
 	if order.Status != model.OrderPendingPay {
@@ -173,7 +200,18 @@ func PayOrder(userID, orderID int64) error {
 		zap.L().Error("logic: remove order close task failed, harmless (state machine guards)",
 			zap.Int64("order_id", orderID), zap.Error(err))
 	}
-	// 4. 通知投递扩展点：「已支付」
+	// 4. 通知投递（挂尾部 best-effort）：「已支付」。
+	//    只在状态机迁移成功后投递（rows=1 的 ok 分支）——双击支付的第二击
+	//    在第 2 步已被守卫拦下返回 ErrOrderStatusChanged，不会走到这里，
+	//    故不会给同一订单发两条「已支付」。幂等键同款：ref_id=order_id。
+	notifyBestEffort(mq.NotificationMessage{
+		UserID:   userID,
+		Type:     string(model.NotifyOrder),
+		Category: string(model.CategoryPaid),
+		RefID:    orderID,
+		Title:    "支付成功",
+		Content:  fmt.Sprintf("订单 #%d 支付成功，金额 ¥%.2f", orderID, order.Amount),
+	})
 	return nil
 }
 
@@ -191,7 +229,7 @@ func CancelOrder(userID, orderID int64) error {
 	if order == nil {
 		return ErrOrderNotExist
 	}
-	if order.UserID != userID {
+	if order.UserID.Int64() != userID {
 		return ErrOrderNotOwner
 	}
 	if order.Status != model.OrderPendingPay {
@@ -219,7 +257,17 @@ func CancelOrder(userID, orderID int64) error {
 		zap.L().Error("logic: remove order close task failed, harmless (state machine guards)",
 			zap.Int64("order_id", orderID), zap.Error(err))
 	}
-	// 5. 通知投递扩展点：「已取消」
+	// 5. 通知投递（挂尾部 best-effort）：「已取消」。
+	//    同 PayOrder：只在取消事务成功（ok 分支）后投递，双击取消的第二击
+	//    走不到这里。名额已退（第 3 步），文案如实相告。
+	notifyBestEffort(mq.NotificationMessage{
+		UserID:   userID,
+		Type:     string(model.NotifyOrder),
+		Category: string(model.CategoryCancelled),
+		RefID:    orderID,
+		Title:    "订单已取消",
+		Content:  fmt.Sprintf("订单 #%d 已取消，参与名额已退回", orderID),
+	})
 	return nil
 }
 
@@ -255,7 +303,7 @@ func GetOrderDetail(userID, orderID int64) (*model.Order, error) {
 	if order == nil {
 		return nil, ErrOrderNotExist
 	}
-	if order.UserID != userID {
+	if order.UserID.Int64() != userID {
 		return nil, ErrOrderNotOwner
 	}
 	return order, nil

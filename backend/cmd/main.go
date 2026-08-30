@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/json"
+
 	"campuscommunity/internal/conf"
 	"campuscommunity/internal/dao"
 	"campuscommunity/internal/dao/mysql"
 	"campuscommunity/internal/dao/redis"
 	"campuscommunity/internal/logic"
+	"campuscommunity/internal/model"
 	"campuscommunity/internal/mq"
 	"campuscommunity/internal/router"
 	"campuscommunity/pkg/utils/logger"
@@ -13,25 +16,85 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+
+	"go.uber.org/zap"
 )
 
-// adaptOrderCreator 把 logic.CreateOrderByMessage 包装为 mq.OrderCreator，
-// 并把 logic/dao 的哨兵错误翻译为 mq 包的消费者哨兵（解 import cycle 的
-// 适配层：mq 不 import logic，错误翻译在装配点完成——main 是唯一
-// 同时看见两个业务包的地方，转译职责天然属于它）。
-// 返回值约定：nil=建单成功；mq.ErrDuplicateOrder=重复消息；
-// mq.ErrOrderTargetNotExist=good/user 不存在；其他原样透传（暂时性失败）。
-func adaptOrderCreator(goodID, userID int64) error {
-	_, err := logic.CreateOrderByMessage(goodID, userID)
+// grabOrderHandler 建单消费者的适配函数：解析消息体 → 调 logic 编排 →
+// 错误分类翻译。mq 包对业务零感知（解 import cycle 的依赖倒置），
+// main 是唯一同时看见 mq 协议与 logic 业务的地方，翻译职责天然在此。
+// 错误契约：nil=成功；包裹 mq.ErrAck=确定性失败（ack 丢弃，防毒消息）；
+// 其他=暂时性失败（消费循环 nack + 指数退避重投）。
+func grabOrderHandler(body []byte) error {
+	// 1. 解析消息：畸形 JSON 属确定性失败——重投一万次也解析不了。
+	// 原始消息体打进 error 日志（可追溯可重放的轻量 DLQ）
+	var msg mq.GrabOrderMessage
+	if err := json.Unmarshal(body, &msg); err != nil {
+		zap.L().Error("grab order message malformed, acked",
+			zap.ByteString("body", body), zap.Error(err))
+		return errors.Join(fmt.Errorf("malformed message: %w", err), mq.ErrAck)
+	}
+
+	// 2. 业务编排
+	_, err := logic.CreateOrderByMessage(msg.GoodID, msg.UserID)
 	switch {
 	case err == nil:
 		return nil
+	// 撞唯一索引 = 重复消息的成功证明：订单已建，直接 ack（nack = 无限撞索引 = 毒消息）
 	case errors.Is(err, dao.ErrDuplicateEntry):
-		return mq.ErrDuplicateOrder
+		zap.L().Info("duplicate grab order message acked (idempotent)",
+			zap.Int64("good_id", msg.GoodID), zap.Int64("user_id", msg.UserID))
+		return errors.Join(fmt.Errorf("duplicate order: %w", err), mq.ErrAck)
+	// good/user 不存在 = 确定性失败：数据异常信号值得人工关注，但重投无意义
 	case errors.Is(err, logic.ErrGoodNotExist), errors.Is(err, logic.ErrUserNotExist):
-		return mq.ErrOrderTargetNotExist
+		zap.L().Error("grab order target not exist, acked",
+			zap.Int64("good_id", msg.GoodID), zap.Int64("user_id", msg.UserID), zap.Error(err))
+		return errors.Join(fmt.Errorf("target not exist: %w", err), mq.ErrAck)
 	default:
+		// 暂时性失败（DB 断连/超时）：透传，消费循环 nack 退避重投
 		return err
+	}
+}
+
+// notificationHandler 通知消费者的适配函数：解析 → 组装通知行 → 落库。
+// 消费者是纯管道（无业务计算，内容在事件现场组装完毕）——本函数只做
+// 协议翻译：消息结构 → 表行结构（雪花 ID 生成）。
+// 错误契约：重复事件（撞 uk_user_category_ref 唯一索引）静默 ack——
+// at-least-once 的正常代价，不打日志防刷屏；畸形消息 ack + error 日志留痕；
+// DB 故障透传走 nack 退避。
+func notificationHandler(body []byte) error {
+	var msg mq.NotificationMessage
+	if err := json.Unmarshal(body, &msg); err != nil {
+		zap.L().Error("notification message malformed, acked",
+			zap.ByteString("body", body), zap.Error(err))
+		return errors.Join(fmt.Errorf("malformed notification: %w", err), mq.ErrAck)
+	}
+	// 字段完整性防御：缺 user_id/ref_id 的消息无法落库（非空列），
+	// 属生产端 bug 的信号，记日志 ack（确定性失败）
+	if msg.UserID <= 0 || msg.RefID <= 0 {
+		zap.L().Error("notification message missing key field, acked",
+			zap.Int64("user_id", msg.UserID), zap.Int64("ref_id", msg.RefID))
+		return errors.Join(fmt.Errorf("notification missing field"), mq.ErrAck)
+	}
+
+	n := &model.Notification{
+		NotificationID: model.ID(snowflake.GenID()),
+		UserID:         model.ID(msg.UserID),
+		Type:           model.NotificationType(msg.Type),
+		Category:       model.NotificationCategory(msg.Category),
+		Title:          msg.Title,
+		Content:        msg.Content,
+		RefID:          model.ID(msg.RefID),
+	}
+	err := dao.CreateNotification(n)
+	switch {
+	case err == nil:
+		return nil
+	// 重复事件：唯一索引已拦，静默 ack（通知幂等防线的物理层）
+	case errors.Is(err, dao.ErrNotificationDuplicate):
+		return errors.Join(fmt.Errorf("duplicate notification"), mq.ErrAck)
+	default:
+		return err // DB 故障：nack 退避重投
 	}
 }
 
@@ -77,12 +140,12 @@ func main() {
 		return
 	}
 	defer mq.Close()
-	// 绑定建单编排（依赖注入：解 mq→logic 与 logic→mq 的 import cycle，
-	// 适配函数同时完成哨兵错误转译，见 adaptOrderCreator 注释）
-	mq.BindOrderCreator(adaptOrderCreator)
-	// 启动建单消费者：独立 goroutine 长驻——Consume 阻塞等投递，
-	// 不能占用 HTTP 主协程；QoS=1 + 手动 ack + 失败分类见 consumer_order.go
-	go mq.ConsumeGrabOrder()
+	// 注册消费者（依赖注入：mq 包对业务零感知，handler 在装配点绑定）
+	mq.Register(mq.GrabOrderQueue, mq.GrabOrderRoutingKey, grabOrderHandler)
+	mq.Register(mq.NotifyQueue, mq.NotifyRoutingKey, notificationHandler)
+	// 启动全部已注册消费者：每消费者一条 goroutine 长驻
+	// （QoS=1 + 手动 ack + 失败分类退避，见 mq/consumer.go）
+	mq.RunConsumers()
 	// 启动延时任务扫描器：订单超时关闭 + 拼单截止判定
 	// （10s 一轮独立 goroutine，随进程退出；未处理任务留在 ZSet，重启补扫）
 	go logic.StartDelayScanner()

@@ -15,8 +15,9 @@ mysql:
   charset: "utf8mb4"
   parse_time: true
   loc: "Local"
-  max_idle_conns: 10
+  max_idle_conns: 100     # 建议 ≈ max_open_conns：高频短查询场景连接全保活，防连接风暴
   max_open_conns: 100
+  conn_max_lifetime: "1h" # 连接定期换新，防被 MySQL wait_timeout 暗杀
 
 redis:
   host: "192.168.81.129"   # 虚拟机 IP

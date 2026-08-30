@@ -24,7 +24,7 @@ func CreateGroupBuy(g *model.GroupBuy) (int64, error) {
 	}
 	// 创建成功后 g.ID（内部自增主键）与 g.GoodID（业务主键）都被 GORM 回填，
 	// 返回业务主键给上层用于对外暴露。
-	return g.GoodID, nil
+	return g.GoodID.Int64(), nil
 }
 
 // DeleteGroupBuy 按业务主键删除拼单记录（发布流程中 Redis 初始化失败的补偿回滚）。
@@ -114,39 +114,80 @@ func ListGroupBuyMembersByGoodID(goodID int64) ([]model.GroupBuyMember, error) {
 	return members, nil
 }
 
-// JudgeExpiredGroupBuys 拼单截止判定（两条互斥的条件 UPDATE）。
+// JudgeExpiredGroupBuys 拼单截止判定（SELECT 候选 + 逐行条件 UPDATE 选主）。
 // 正常时序下人数达 min 的拼单在建单事务里已翻 succeeded，截止时仍
-// recruiting 的行只剩 failed 分支；第二条 UPDATE 防御性覆盖「翻漏」的行
+// recruiting 的行只剩 failed 分支；succeeded 分支防御性覆盖「翻漏」的行
 // （如终态不计数导致的人数滞后），补翻 succeeded。
-// 两条 WHERE 以 current_members 与 min 的关系互斥，同轮不会双翻。
+// 两条路径以 current_members 与 min 的关系互斥，同轮不会双翻。
+//
+// 改造说明（通知模块接入触发）：原实现是两条批量 UPDATE 只能返回计数，
+// 而通知需要知道「翻了哪些行」才知道发给谁——改为先 SELECT 候选 good_id
+// 列表，再逐行执行带原 WHERE 条件的 UPDATE：rows=1 的调用方「赢得」该行，
+// 拥有该行的通知投递权；并发扫描器/多实例部署时后到者 rows=0 落空——
+// 与建单事务的成团翻转（BecameSucceeded）同一手法：RowsAffected 选举，
+// 无显式锁、无选举代码。
+// 代价与量级：N 行 = 1+N 条语句（原 2 条）。每轮翻终态的拼单是尾数
+// 量级（正常时序建单事务已翻 succeeded，截止时仍 recruiting 天然稀少），
+// 逐行开销可忽略——用「逐行选主能力」换一点语句数，值。
 // 幂等性：WHERE status='recruiting' —— 已翻过的行 rows=0 落空，
 // 状态本身就是「扫过」的持久化标记，多轮扫描天然幂等，无需去重位。
-// 返回 (failed数, succeeded数) 供日志观察。
+// 返回 (failedIDs, succeededIDs)：本轮由本调用方实际翻转的 good_id 列表
+// （空切片 = 本轮无翻终态，调用方零通知）。
 // 注：终态拼单的热榜 ZREM 不在此处做——查询侧回表过滤已保证终态不展示，
 // ZREM 属体积优化，非正确性依赖。
-func JudgeExpiredGroupBuys() (failed, succeeded int64, err error) {
-	db := mysql.GetDB()
-	// 分支1：截止且人数不足 → failed（拼单失败，名额不退——钱没付过，
+func JudgeExpiredGroupBuys() (failedIDs, succeededIDs []int64, err error) {
+	// ---- 分支1：截止且人数不足 → failed（拼单失败，名额不退——钱没付过，
 	// 但 Redis stock 的残留由守恒式记账兜底：占用在预扣时已扣，拼单终态
-	// 后入口拦截，不再产生新占用）
-	r := db.Model(&model.GroupBuy{}).
+	// 后入口拦截，不再产生新占用） ----
+	var failedCand []int64
+	// Pluck 只取 good_id 一列（通知只需要 id，不需要整行）。
+	// 每条语句从 mysql.GetDB() 重起链：GORM 的 Where 会污染 builder 状态，
+	// 复用同一个 db 变量连发多条是项目已踩过的坑（链式污染）
+	if err := mysql.GetDB().Model(&model.GroupBuy{}).
 		Where("status = ? AND deadline < NOW() AND current_members < min_members",
 			model.GroupBuyRecruiting).
-		Update("status", model.GroupBuyFailed)
-	if r.Error != nil {
-		return 0, 0, fmt.Errorf("dao: judge expired group buys (failed): %w", r.Error)
+		Pluck("good_id", &failedCand).Error; err != nil {
+		return nil, nil, fmt.Errorf("dao: select judge failed candidates: %w", err)
 	}
-	failed = r.RowsAffected
-	// 分支2：截止但人数已足（防御性补翻）→ succeeded
-	r = db.Model(&model.GroupBuy{}).
+	failedIDs = make([]int64, 0, len(failedCand))
+	for _, id := range failedCand {
+		// 逐行 CAS：完整保留批量版的全部 WHERE 条件——SELECT 与 UPDATE
+		// 间隙内行状态可能被并发改变（如建单事务恰好翻走），条件守卫兜底
+		r := mysql.GetDB().Model(&model.GroupBuy{}).
+			Where("good_id = ? AND status = ? AND deadline < NOW() AND current_members < min_members",
+				id, model.GroupBuyRecruiting).
+			Update("status", model.GroupBuyFailed)
+		if r.Error != nil {
+			return nil, nil, fmt.Errorf("dao: judge failed group buy %d: %w", id, r.Error)
+		}
+		// rows=1 = 本轮由我翻转（选主成功）；rows=0 = 并发者先翻/已翻，落空
+		if r.RowsAffected == 1 {
+			failedIDs = append(failedIDs, id)
+		}
+	}
+
+	// ---- 分支2：截止但人数已足（防御性补翻）→ succeeded ----
+	var succCand []int64
+	if err := mysql.GetDB().Model(&model.GroupBuy{}).
 		Where("status = ? AND deadline < NOW() AND current_members >= min_members",
 			model.GroupBuyRecruiting).
-		Update("status", model.GroupBuySucceeded)
-	if r.Error != nil {
-		return 0, 0, fmt.Errorf("dao: judge expired group buys (succeeded): %w", r.Error)
+		Pluck("good_id", &succCand).Error; err != nil {
+		return nil, nil, fmt.Errorf("dao: select judge succeeded candidates: %w", err)
 	}
-	succeeded = r.RowsAffected
-	return failed, succeeded, nil
+	succeededIDs = make([]int64, 0, len(succCand))
+	for _, id := range succCand {
+		r := mysql.GetDB().Model(&model.GroupBuy{}).
+			Where("good_id = ? AND status = ? AND deadline < NOW() AND current_members >= min_members",
+				id, model.GroupBuyRecruiting).
+			Update("status", model.GroupBuySucceeded)
+		if r.Error != nil {
+			return nil, nil, fmt.Errorf("dao: judge succeeded group buy %d: %w", id, r.Error)
+		}
+		if r.RowsAffected == 1 {
+			succeededIDs = append(succeededIDs, id)
+		}
+	}
+	return failedIDs, succeededIDs, nil
 }
 
 // GetUserJoinedGoodIDs 查询用户在给定拼单集合中已参与的 good_id 集合。

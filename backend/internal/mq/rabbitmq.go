@@ -25,6 +25,10 @@ const (
 	GrabOrderQueue = "campus.community.grab_order"
 	// GrabOrderRoutingKey 建单消息路由键
 	GrabOrderRoutingKey = "grab_order"
+	// NotifyQueue 通知消息队列名
+	NotifyQueue = "campus.community.notify"
+	// NotifyRoutingKey 通知消息路由键
+	NotifyRoutingKey = "notify"
 )
 
 // Init 初始化 RabbitMQ 连接与拓扑（fail-fast：连接失败直接 fatal，不降级运行）。
@@ -81,6 +85,24 @@ func Init(cfg *conf.RabbitMQConfig) error {
 		false,
 		nil); err != nil {
 		return fmt.Errorf("mq: bind grab order queue: %w", err)
+	}
+	// 通知队列：与建单队列同一交换机、不同 routing key（direct 精确匹配分流）
+	if _, err := channel.QueueDeclare(
+		NotifyQueue,
+		true,
+		false,
+		false,
+		false,
+		nil); err != nil {
+		return fmt.Errorf("mq: declare notify queue: %w", err)
+	}
+	if err := channel.QueueBind(
+		NotifyQueue,
+		NotifyRoutingKey,
+		cfg.Exchange,
+		false,
+		nil); err != nil {
+		return fmt.Errorf("mq: bind notify queue: %w", err)
 	}
 	exchangeName = cfg.Exchange
 	return nil
