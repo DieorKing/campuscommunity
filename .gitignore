@@ -26,3 +26,4 @@ Thumbs.db
 # ===== 前端依赖（将来 Vue3 项目会有）=====
 frontend/node_modules/
 frontend/dist/
+backend/tmp/

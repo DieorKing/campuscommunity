@@ -18,7 +18,37 @@ const routes = [
     path: '/group-buys',
     name: 'GroupBuyList',
     component: () => import('../views/GroupBuyList.vue'),
-    meta: { requiresAuth: true }, // 首页（默认路由）；后续用真实拼单广场页面替换
+    meta: { requiresAuth: true }, // 首页（默认路由）：拼单广场
+  },
+  {
+    path: '/publish',
+    name: 'Publish',
+    component: () => import('../views/Publish.vue'),
+    meta: { requiresAuth: true }, // 发布拼单
+  },
+  {
+    path: '/group-buy/:id',
+    name: 'GroupBuyDetail',
+    component: () => import('../views/GroupBuyDetail.vue'),
+    meta: { requiresAuth: true }, // 拼单详情 + 抢单轮询
+  },
+  {
+    path: '/orders',
+    name: 'OrderList',
+    component: () => import('../views/OrderList.vue'),
+    meta: { requiresAuth: true }, // 我的订单（状态筛选 + 分页）
+  },
+  {
+    path: '/notifications',
+    name: 'NotificationList',
+    component: () => import('../views/NotificationList.vue'),
+    meta: { requiresAuth: true }, // 我的通知（全部/未读 Tab + 懒标记已读）
+  },
+  {
+    path: '/order/:id',
+    name: 'OrderDetail',
+    component: () => import('../views/OrderDetail.vue'),
+    meta: { requiresAuth: true }, // 订单详情 + 支付/取消
   },
   {
     path: '/profile',

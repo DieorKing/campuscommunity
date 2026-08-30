@@ -1,12 +1,13 @@
 <template>
-  <div class="profile-container">
-    <el-card class="profile-card">
-      <template #header>
-        <div class="card-header">
-          <span>个人资料</span>
-          <el-button type="danger" plain size="small" @click="handleLogout">退出登录</el-button>
-        </div>
-      </template>
+  <div class="page-container">
+    <AppHeader />
+    <main class="profile-main">
+      <el-card class="profile-card">
+        <template #header>
+          <div class="card-header">
+            <span>个人资料</span>
+          </div>
+        </template>
 
       <el-skeleton :rows="5" animated v-if="!userInfo" />
 
@@ -45,17 +46,17 @@
           </el-button>
         </el-form-item>
       </el-form>
-    </el-card>
+      </el-card>
+    </main>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '../stores/user'
+import AppHeader from '../components/AppHeader.vue'
 
-const router = useRouter()
 const userStore = useUserStore()
 
 const savingProfile = ref(false)
@@ -131,18 +132,23 @@ async function handleSaveAddress() {
     savingAddress.value = false
   }
 }
-
-function handleLogout() {
-  userStore.clearToken()
-  router.push('/login')
-}
 </script>
 
 <style scoped>
-.profile-container {
+.page-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f5f7fa;
+}
+.profile-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 16px;
+}
+.profile-card {
   max-width: 640px;
-  margin: 40px auto;
-  padding: 0 16px;
+  margin: 0 auto;
 }
 
 .card-header {
