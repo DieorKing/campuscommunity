@@ -20,7 +20,7 @@ var ErrNotificationDuplicate = errors.New("通知已存在")
 
 // CreateNotification 通知消费者落库（INSERT，幂等入口在唯一索引）。
 // 不做前置 SELECT 判重——「查」与「插」之间的间隙是 check-then-act 竞态，
-// 唯一索引才是物理防线（与建单 INSERT 同款姿势）。
+// 唯一索引才是物理防线（与建单 INSERT 同一手法）。
 // 返回 ErrNotificationDuplicate = 重复事件已通知过，调用方静默 ack。
 func CreateNotification(n *model.Notification) error {
 	if err := mysql.GetDB().Create(n).Error; err != nil {

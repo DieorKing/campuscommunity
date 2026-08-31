@@ -149,6 +149,9 @@ func main() {
 	// 启动延时任务扫描器：订单超时关闭 + 拼单截止判定
 	// （10s 一轮独立 goroutine，随进程退出；未处理任务留在 ZSet，重启补扫）
 	go logic.StartDelayScanner()
+	// 补偿扫描器：10s 轮捞 delay:compensation:retry 到期任务，
+	// 幂等执行补偿动作（成功删行/失败退避/5 次封顶翻 failed 终态）
+	go logic.StartCompensationScanner()
 	// 注册路由
 	r := router.SetupRouter(conf.Conf.Mode)
 	err := r.Run(fmt.Sprintf(":%d", conf.Conf.Port))

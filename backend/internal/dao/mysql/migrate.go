@@ -13,5 +13,6 @@ func Migration() error {
 		&model.GroupBuyMember{},
 		&model.Order{},
 		&model.Notification{},
+		&model.CompensationTask{},
 	)
 }

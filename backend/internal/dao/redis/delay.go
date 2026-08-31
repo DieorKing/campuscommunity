@@ -40,7 +40,7 @@ const orderCloseDelay = 30 * time.Minute
 // 失败处理：best-effort——延时任务属派生数据（订单表 status 本身就是
 // 关单判定的真值源，ZSet 只是「到点提醒」的索引），丢失的兜底是补偿任务
 // （全表扫描 pending_pay 超时订单补偿关闭，同属演进路径）。logic 层调用失败
-// 仅记 error 日志，不回滚已提交的建单事务（核心事实优先，派生数据靠补偿）。
+// 补偿入队，不回滚已提交的建单事务（核心事实优先，派生数据靠补偿）。
 func EnqueueOrderClose(orderID int64) error {
 	// 到期时间 = 当前时间 + 30min；Unix() 取秒级时间戳作 score
 	executeAt := time.Now().Add(orderCloseDelay).Unix()
@@ -60,7 +60,7 @@ func EnqueueOrderClose(orderID int64) error {
 // 读删若不原子，崩溃窗口内任务会丢失（读了还没删进程就挂了）；先读后删
 // 配合关单幂等（状态机条件 UPDATE 只允许 pending_pay→closed），即使重读
 // 已处理的任务也不会双关单。
-// 上限 limit：单轮处理量有界，防止积压台风式灌入一次性拖垮单次扫描
+// 上限 limit：单轮处理量有界，防止积压集中涌入一次性拖垮单次扫描
 // （每单关单涉及 3 次 DB 写 + Redis 释放，1000 上限是防御值）。
 func DequeueExpiredOrderCloses(now time.Time) ([]string, error) {
 	ids, err := client.ZRangeByScore(delayOrderCloseKey(), redis.ZRangeBy{

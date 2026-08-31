@@ -1,6 +1,6 @@
 // Package logic 业务逻辑层：编排 DAO 与工具函数，实现各模块业务规则。
 // 本文件为通知模块在 logic 侧的统一挂载助手：所有业务事件的通知投递
-// 都经由 notifyBestEffort 走同款姿势——「挂尾部 + best-effort」。
+// 都经由 notifyBestEffort 走统一模式——「挂尾部 + best-effort」。
 // 六个挂载点（本包内分布）：
 //   - order.go  CreateOrderByMessage 第5c步：订单待支付、第5d步：拼单已成团（批量）
 //   - order.go  PayOrder 第4步：已支付
@@ -33,11 +33,15 @@ var ErrNotificationNotOwner = errors.New("非本人通知")
 // 不打全量 body（Title/Content 是展示文案，排障价值低）。
 func notifyBestEffort(msg mq.NotificationMessage) {
 	if err := mq.PublishNotification(msg); err != nil {
-		zap.L().Error("logic: publish notification failed, dropped (best-effort)",
+		// 投递失败：落补偿任务（重放型——payload 带完整消息，消费端
+		// 唯一索引兜底重复投递）。落任务本身失败才降级纯日志
+		//（补偿的补偿不存在，compensation.go 注释）
+		zap.L().Error("logic: publish notification failed, compensating",
 			zap.Int64("user_id", msg.UserID),
 			zap.String("category", msg.Category),
 			zap.Int64("ref_id", msg.RefID),
 			zap.Error(err))
+		CompensateNotification(msg)
 	}
 }
 
@@ -50,7 +54,7 @@ func notifyBestEffort(msg mq.NotificationMessage) {
 //  2. 已取消订单的成员也在收件人里：取消订单不删签到簿行（签到簿 =
 //     「参与过」的记录，业务上取消只回退人数）。demo 容忍这点噪音；
 //     精确版需按订单状态过滤收件人（JOIN orders），复杂度不值——
-//     「展示容忍缺失/冗余，核心数据零容忍」的同款取舍。
+//     「展示容忍缺失/冗余，核心数据零容忍」的一贯取舍。
 //
 // 幂等双保险（与订单类通知同构）：
 //  1. 发送侧选主：成团通知只由 BecameSucceeded 的唯一触发者发出；
@@ -94,7 +98,7 @@ func notifyGroupBuyEvent(gb *model.GroupBuy, category model.NotificationCategory
 // 未读数查询失败不拖垮列表（角标是展示数据，容忍暂缺）：
 // 仅记日志、Unread 返回 0，列表照常返回。
 func ListNotifications(userID int64, p *model.ParamListNotification) (*model.NotificationListResult, error) {
-	// 归一化：与 ListUserOrders 同款（page 从 1 起，page_size 默认 10 上限 50）
+	// 归一化：与 ListUserOrders 同规约（page 从 1 起，page_size 默认 10 上限 50）
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
 		page = 1
@@ -121,7 +125,7 @@ func ListNotifications(userID int64, p *model.ParamListNotification) (*model.Not
 
 // MarkNotificationRead 标记单条通知已读（POST /api/v1/notification/:id/read）。
 // 编排：前置查询（区分不存在/越权两种拒绝语义）→ 条件 UPDATE（已读幂等
-// 落空视为成功）。与 PayOrder 同款「查询为友好报错，守卫为绝对正确」双保险：
+// 落空视为成功）。与 PayOrder 同构的「查询为友好报错，守卫为绝对正确」双保险：
 // 查询为了把 40001/越权/成功三种语义分清楚，UPDATE 的 WHERE user_id+is_read
 // 守卫兜住查询间隙的竞态。
 // 已读再标已读 = 幂等成功（rows=0 不报错）：前端重复点击/轮询重试的

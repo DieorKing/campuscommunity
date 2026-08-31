@@ -117,7 +117,7 @@ func removeCloseTaskQuietly(orderID int64) {
 
 // judgeExpiredGroupBuys 职责B：拼单截止判定 + 终态批量通知。
 // 幂等性由逐行条件 UPDATE 的状态守卫保证（已翻过的行 rows=0 落空且不
-// 进入返回列表），无轮间状态。通知挂翻转之后（与订单类挂载点同款铁律：
+// 进入返回列表），无轮间状态。通知挂翻转之后（与订单类挂载点同一铁律：
 // 翻转成功才有资格通知，落空者零通知）。
 func judgeExpiredGroupBuys() {
 	failedIDs, succeededIDs, err := dao.JudgeExpiredGroupBuys()
@@ -132,7 +132,7 @@ func judgeExpiredGroupBuys() {
 		zap.Int("failed", len(failedIDs)), zap.Int("succeeded", len(succeededIDs)))
 	// ---- 通知投递：翻终态的每行 → 拉拼单快照 → 批量通知成员+发布者 ----
 	// 逐单独立处理：单条拉快照失败只丢该单的通知（记日志 continue），
-	// 不拖垮整批——与其他扫描器循环同款「单条失败不中断」策略
+	// 不拖垮整批——与其他扫描器循环一致的「单条失败不中断」策略
 	for _, id := range failedIDs {
 		gb, err := dao.GetGroupBuyByID(id)
 		if err != nil || gb == nil {

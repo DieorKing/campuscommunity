@@ -178,6 +178,23 @@ func GetOrderByUserAndGood(userID, goodID int64) (*model.Order, error) {
 	return &order, nil
 }
 
+// CountOrdersByGoodID 统计拼单的有效订单数（热榜补偿重算用）。
+// 有效口径：排除 closed/cancelled（未支付/已取消的订单不应贡献热度，
+// 与业务侧「热度=成交热度」语义一致——只有 pending_pay 之后的状态算数，
+// pending_pay 含在内：已下单待支付即视为占用热度名额，与热榜 ZINCRBY
+// 的触发时机（建单成功）一致）。
+// 走 orders.good_id 索引（uk_user_good 的最左前缀）等值 COUNT。
+func CountOrdersByGoodID(goodID int64) (int64, error) {
+	var n int64
+	if err := mysql.GetDB().Model(&model.Order{}).
+		Where("good_id = ? AND status NOT IN ?", goodID,
+			[]model.OrderStatus{model.OrderClosed, model.OrderCancelled}).
+		Count(&n).Error; err != nil {
+		return 0, fmt.Errorf("dao: count orders by good: %w", err)
+	}
+	return n, nil
+}
+
 // GetOrderByOrderID 按业务主键查订单（订单详情/支付/取消的前置查询）。
 // 返回约定同本包其他 Get：(nil, nil) = 不存在（正常业务分支，logic 翻译
 // ErrOrderNotExist），仅 DB 故障返回 err。走 order_id 唯一索引等值查询。

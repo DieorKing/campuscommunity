@@ -65,7 +65,7 @@ func SetupRouter(mode string) *gin.Engine {
 	// 订单模块：支付/取消/列表/详情（挂 JWT 强制鉴权——订单是私产，
 	// 全部接口依赖确定的 userID 做所有权校验，匿名无意义）。
 	// 路由树：/list（静态段）与 /:id（参数段）同位共存，Gin 静态优先
-	//（与 group-buy 同款），GET /order/list 命中列表，GET /order/123 落 :id。
+	//（与 group-buy 路由树结构一致），GET /order/list 命中列表，GET /order/123 落 :id。
 	orderGroup := v1.Group("/order")
 	orderGroup.Use(jwtmid.JWTAuthMiddleware())
 	{
@@ -78,11 +78,11 @@ func SetupRouter(mode string) *gin.Engine {
 	// 通知模块：列表 + 标记已读（挂 JWT 强制鉴权——通知是私产，
 	// 列表/已读都依赖确定的 userID 做归属，匿名无意义）。
 	// 路由树：/list（静态段）与 /:id/read（参数段）同位共存，Gin 静态优先
-	//（与 group-buy/order 同款）。
+	//（与 group-buy/order 路由树结构一致）。
 	notificationGroup := v1.Group("/notification")
 	notificationGroup.Use(jwtmid.JWTAuthMiddleware())
 	{
-		notificationGroup.GET("/list", controller.ListNotificationsHandler)        // 我的通知（30s 轮询数据源，列表+未读一次返回）
+		notificationGroup.GET("/list", controller.ListNotificationsHandler)         // 我的通知（30s 轮询数据源，列表+未读一次返回）
 		notificationGroup.POST("/:id/read", controller.MarkNotificationReadHandler) // 标记已读（幂等：已读再标成功）
 	}
 

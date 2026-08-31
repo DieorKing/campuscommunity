@@ -76,7 +76,7 @@ func CancelHandler(c *gin.Context) {
 // ListOrdersHandler 我的订单列表 GET /api/v1/order/list（需登录）。
 // query 参数：status（可选过滤）/ page / page_size（logic 层归一化）。
 // 注意与 /order/:id 的路由共存：/list 是静态段，Gin 静态优先匹配，
-// GET /order/123 才落入 :id 参数节点（与 group-buy 同款路由树）。
+// GET /order/123 才落入 :id 参数节点（与 group-buy 路由树结构一致）。
 func ListOrdersHandler(c *gin.Context) {
 	var p model.ParamListOrder
 	// query 绑定失败（如 page=abc）→ 1001；全可选参数下极少触发

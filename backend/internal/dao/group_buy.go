@@ -120,15 +120,14 @@ func ListGroupBuyMembersByGoodID(goodID int64) ([]model.GroupBuyMember, error) {
 // （如终态不计数导致的人数滞后），补翻 succeeded。
 // 两条路径以 current_members 与 min 的关系互斥，同轮不会双翻。
 //
-// 改造说明（通知模块接入触发）：原实现是两条批量 UPDATE 只能返回计数，
-// 而通知需要知道「翻了哪些行」才知道发给谁——改为先 SELECT 候选 good_id
-// 列表，再逐行执行带原 WHERE 条件的 UPDATE：rows=1 的调用方「赢得」该行，
-// 拥有该行的通知投递权；并发扫描器/多实例部署时后到者 rows=0 落空——
-// 与建单事务的成团翻转（BecameSucceeded）同一手法：RowsAffected 选举，
-// 无显式锁、无选举代码。
-// 代价与量级：N 行 = 1+N 条语句（原 2 条）。每轮翻终态的拼单是尾数
-// 量级（正常时序建单事务已翻 succeeded，截止时仍 recruiting 天然稀少），
-// 逐行开销可忽略——用「逐行选主能力」换一点语句数，值。
+// 设计说明：批量 UPDATE 只能返回计数，而通知需要知道「翻了哪些行」才能
+// 确定收件人——因此先 SELECT 候选 good_id 列表，再逐行执行带原 WHERE
+// 条件的 UPDATE：rows=1 的调用方「赢得」该行，拥有该行的通知投递权；
+// 并发扫描器/多实例部署时后到者 rows=0 落空——与建单事务的成团翻转
+// （BecameSucceeded）同一手法：RowsAffected 选举，无显式锁、无选举代码。
+// 代价与量级：N 行 = 1+N 条语句（纯批量 UPDATE 为 2 条）。每轮翻终态的
+// 拼单是尾数量级（正常时序建单事务已翻 succeeded，截止时仍 recruiting
+// 天然稀少），逐行开销可忽略——用「逐行选主能力」换少量语句数。
 // 幂等性：WHERE status='recruiting' —— 已翻过的行 rows=0 落空，
 // 状态本身就是「扫过」的持久化标记，多轮扫描天然幂等，无需去重位。
 // 返回 (failedIDs, succeededIDs)：本轮由本调用方实际翻转的 good_id 列表

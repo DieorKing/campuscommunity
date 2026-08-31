@@ -83,7 +83,7 @@ func GroupBuyDetailHandler(c *gin.Context) {
 	// 2. 取当前登录用户：强制鉴权中间件已在路由层拦截未登录请求，这里必然拿到有效值。
 	userID := GetCurrentUserID(c)
 	// 3. 调 logic：哨兵错误映射业务码——「拼单不存在」是用户点了失效链接的正常业务分支（20001），
-	//    其余（DB 挂了等）统一 ServerBusy 不泄露内部细节。与发布接口同款 switch 风格保持一致。
+	//    其余（DB 挂了等）统一 ServerBusy 不泄露内部细节。与发布接口 switch 风格保持一致。
 	detail, err := logic.GroupBuyDetail(userID, goodID)
 	if err != nil {
 		switch {

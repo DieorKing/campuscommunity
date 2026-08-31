@@ -120,16 +120,24 @@ func CreateOrderByMessage(goodID, userID int64) (*dao.OrderCreateResult, error) 
 			zap.Int64("order_id", order.OrderID.Int64()))
 	}
 
-	// ---- 第 5 步：事务外 best-effort（派生数据，失败仅记日志） ----
+	// ---- 第 5 步：事务外 best-effort（派生数据，失败落补偿任务） ----
 	// 5a. 热榜 +1：每单建成 +1（非成团才加——成团是全团一次，建单是每人一次）
 	if err := redis.ZIncrHotRank(goodID); err != nil {
-		zap.L().Error("logic: incr hot rank failed, order kept (best-effort)",
+		// 热榜失败落补偿任务（重算型——ZINCRBY 相对操作不可直接重试，
+		// 消费者 COUNT+ZADD 绝对值覆盖）。落任务本身失败由 compensate
+		// 内部降级纯日志
+		zap.L().Error("logic: incr hot rank failed, order kept (compensate)",
 			zap.Int64("good_id", goodID), zap.Error(err))
+		CompensateHotRank(goodID)
 	}
 	// 5b. 延时关单入队：now+30min 到期，延时扫描器捞取关闭
 	if err := redis.EnqueueOrderClose(order.OrderID.Int64()); err != nil {
-		zap.L().Error("logic: enqueue order close failed, order kept (best-effort)",
+		// ZADD 失败落补偿任务（重放型——ZADD 覆盖语义幂等，消费者
+		// 原样重发，score 重算新窗口）。残留兜底：全表扫描 pending_pay
+		// 超时订单
+		zap.L().Error("logic: enqueue order close failed, order kept (compensate)",
 			zap.Int64("order_id", order.OrderID.Int64()), zap.Error(err))
+		CompensateOrderClose(order.OrderID.Int64())
 	}
 	// 5c. 通知投递（挂尾部 best-effort）：「订单待支付」。
 	//     内容组装在事件现场——此刻上下文最全：拼单标题 gb.Title、金额快照
@@ -147,7 +155,7 @@ func CreateOrderByMessage(goodID, userID int64) (*dao.OrderCreateResult, error) 
 			gb.Title, order.Amount),
 	})
 
-	// 5d. 成团批量通知（挂尾部 best-effort，与 5c 同款姿势）。
+	// 5d. 成团批量通知（挂尾部 best-effort，模式与 5c 一致）。
 	//     res.BecameSucceeded 的 RowsAffected 选主保证全场只此一人投递
 	//     （并发消费者中恰好把人数推到 min 的那次事务得 rows=1）；
 	//     gb 是事务前的快照，但 Title/PublisherID/GoodID 不可变（发布后
@@ -203,7 +211,7 @@ func PayOrder(userID, orderID int64) error {
 	// 4. 通知投递（挂尾部 best-effort）：「已支付」。
 	//    只在状态机迁移成功后投递（rows=1 的 ok 分支）——双击支付的第二击
 	//    在第 2 步已被守卫拦下返回 ErrOrderStatusChanged，不会走到这里，
-	//    故不会给同一订单发两条「已支付」。幂等键同款：ref_id=order_id。
+	//    故不会给同一订单发两条「已支付」。幂等键构成一致：ref_id=order_id。
 	notifyBestEffort(mq.NotificationMessage{
 		UserID:   userID,
 		Type:     string(model.NotifyOrder),
