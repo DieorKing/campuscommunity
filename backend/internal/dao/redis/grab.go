@@ -82,3 +82,14 @@ func IsGroupBuyMember(goodID, userID int64) (bool, error) {
 	}
 	return ok, nil
 }
+
+// ListGroupBuyMemberIDs 拉取拼单的全部预扣成员（对账扫描器用）。
+// SMEMBERS O(N)：集合有界（≤ max_members），
+// 成员形态与写入侧一致：string 形态的 user_id。
+func ListGroupBuyMemberIDs(goodID int64) ([]string, error) {
+	ids, err := client.SMembers(groupBuyMembersKey(goodID)).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis: list group buy members: %w", err)
+	}
+	return ids, nil
+}

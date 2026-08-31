@@ -152,6 +152,9 @@ func main() {
 	// 补偿扫描器：10s 轮捞 delay:compensation:retry 到期任务，
 	// 幂等执行补偿动作（成功删行/失败退避/5 次封顶翻 failed 终态）
 	go logic.StartCompensationScanner()
+	// 对账扫描器：60s 比对 Redis 预扣标记 vs 订单事实，差集=建单消息
+	// 丢失，重发修复（消息丢失无单点报错，只能靠数据集比对发现）
+	go logic.StartReconcileScanner()
 	// 注册路由
 	r := router.SetupRouter(conf.Conf.Mode)
 	err := r.Run(fmt.Sprintf(":%d", conf.Conf.Port))
