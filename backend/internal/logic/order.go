@@ -76,6 +76,9 @@ func CreateOrderByMessage(goodID, userID int64) (*dao.OrderCreateResult, error) 
 	}
 	if gb == nil {
 		// good 不存在 = 确定性失败：消费者 ack + error 日志（唯一跳过建单的情形）
+		// 同步清除 pending 标记：消息已被消费且不会再产出订单，
+		// 标记残留会让对账扫描器无限重发（防毒标记）
+		clearPendingGrabQuietly(goodID, userID)
 		return nil, ErrGoodNotExist
 	}
 
@@ -85,7 +88,8 @@ func CreateOrderByMessage(goodID, userID int64) (*dao.OrderCreateResult, error) 
 		return nil, fmt.Errorf("logic: create order get user: %w", err)
 	}
 	if user == nil {
-		// 用户不存在 = 确定性失败：无主的订单没有意义
+		// 用户不存在 = 确定性失败：无主的订单没有意义（同步清标记，同上）
+		clearPendingGrabQuietly(goodID, userID)
 		return nil, ErrUserNotExist
 	}
 
@@ -110,8 +114,17 @@ func CreateOrderByMessage(goodID, userID int64) (*dao.OrderCreateResult, error) 
 		// ErrDuplicateEntry 原样上抛：消费者识别后 ack（重复消息的成功证明）。
 		// 其余错误（DB 断连等暂时性故障）同样上抛：消费者 nack 退避重试。
 		// 两类错误的分拣点是消费者，logic 不吞不错译
+		// 重复消息 = 订单已存在的成功证明：清 pending 标记（success 半边）。
+		// 暂时性故障不清：消息会 nack 重投，标记保留供真丢失时对账重发
+		if errors.Is(err, dao.ErrDuplicateEntry) {
+			clearPendingGrabQuietly(goodID, userID)
+		}
 		return nil, err
 	}
+	// 建单成功（事务已提交）：清 pending 标记——pending→success 的
+	// success 半边落点。失败仅记日志：残留标记由对账扫描器重发，
+	// 重发撞唯一索引走上面的 ErrDuplicateEntry 分支再清——自愈闭环
+	clearPendingGrabQuietly(goodID, userID)
 	// 积压消息容忍语义：终态拼单照建单但不计数（人数冻结跟终局走，
 	// 不跟满员走），记 warn 供对账观察
 	if !res.Counted {
@@ -169,6 +182,17 @@ func CreateOrderByMessage(goodID, userID int64) (*dao.OrderCreateResult, error) 
 	}
 
 	return res, nil
+}
+
+// clearPendingGrabQuietly 清除 pending 标记（best-effort）。
+// 调用点：建单成功 / 重复消息 / good·user 不存在三个终态出口。
+// 失败仅记日志：残留标记由对账扫描器重发 → 重发消息撞唯一索引 →
+// 重复消息分支再清——自愈闭环，无需补偿任务兜底。
+func clearPendingGrabQuietly(goodID, userID int64) {
+	if err := redis.RemoveGrabPending(goodID, userID); err != nil {
+		zap.L().Error("logic: remove grab pending failed (self-heals via reconcile)",
+			zap.Int64("good_id", goodID), zap.Int64("user_id", userID), zap.Error(err))
+	}
 }
 
 // PayOrder 模拟支付（POST /api/v1/order/:id/pay，条件 UPDATE 状态机守卫）。
