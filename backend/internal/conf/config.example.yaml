@@ -38,13 +38,17 @@ rabbitmq:
 
 jwt:
   secret: "your_secret_here"          # ← 替换为自定义密钥
-  expire: 168               # 7 天，过期重登，无 refresh
+  expire: "168h"            # 7 天，过期重登，无 refresh；必须带单位（裸数字被解析为纳秒）
   issuer: "campuscommunity_backend"
 
 snowflake:
   start_time: "2026-01-01"   # 起始纪元，格式 2006-01-02（Go 参考时间）
   datacenter_id: 1           # 数据中心 ID，范围 0-31，多节点扩展时分配不同值
   worker_id: 1               # 工作节点 ID，范围 0-31，多节点扩展时分配不同值
+
+upload:
+  dir: "./uploads"           # 上传文件根目录（头像存 {dir}/avatars/，相对运行 cwd）
+  max_size_mb: 5             # 单文件大小上限
 
 log:
   level: "info"

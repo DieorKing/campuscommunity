@@ -48,6 +48,10 @@ snowflake:
   datacenter_id: 1
   worker_id: 1
 
+upload:
+  dir: "/app/uploads"        # compose 挂载命名卷 avatar-uploads 到此路径（容器重建不丢头像）
+  max_size_mb: 5
+
 log:
   level: "info"
   filename: "web_app.log"

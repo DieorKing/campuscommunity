@@ -81,6 +81,9 @@ services:
     volumes:
       - ./backend/internal/conf/config.container.yaml:/app/config/config.container.yaml:ro
                               # 配置挂载而非进镜像：改配置不重建镜像（12-factor）
+      - avatar-uploads:/app/uploads
+                              # 上传文件命名卷：容器重建不丢用户头像；
+                              # 配置 container.upload.dir=/app/uploads 与此对应
     depends_on:               # 并行启动的顺序治理：等数据层健康再启动，防连库竞态
       mysql:
         condition: service_healthy
@@ -109,6 +112,7 @@ volumes:
   mysql-data:
   redis-data:
   rabbitmq-data:
+  avatar-uploads:
 
 networks:
   campuscommunity:

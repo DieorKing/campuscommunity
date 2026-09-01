@@ -1,6 +1,7 @@
 package router
 
 import (
+	"campuscommunity/internal/conf"
 	"campuscommunity/internal/controller"
 	jwtmid "campuscommunity/internal/middleware/jwt"
 	"campuscommunity/internal/middleware/ratelimit"
@@ -47,6 +48,14 @@ func SetupRouter(mode string) *gin.Engine {
 		userGroup.GET("/profile", controller.GetProfileHandler)      // 查看个人资料
 		userGroup.PATCH("/profile", controller.UpdateProfileHandler) // 修改个人资料（PATCH 部分字段更新）
 		userGroup.PUT("/address", controller.UpdateAddressHandler)   // 修改收货地址
+		userGroup.POST("/avatar", controller.UploadAvatarHandler)    // 头像上传（multipart，JWT 内）
+	}
+
+	// 上传文件静态服务：dev 直连后端时由 Gin 托管 {upload.dir}；
+	// 容器栈走 Nginx 的 /uploads/ 反代（见 nginx.conf），此路由兜底不影响。
+	// 配置未设置 upload.dir（旧配置文件兼容）时跳过注册，不影响启动。
+	if dir := conf.Conf.UploadConfig.Dir; dir != "" {
+		r.Static("/uploads", dir)
 	}
 
 	// 拼单模块：发布 + 详情 + 抢单 + 状态轮询（挂 JWT 强制鉴权，四个接口都必须登录）。

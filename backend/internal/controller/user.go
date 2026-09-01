@@ -107,6 +107,36 @@ func UpdateProfileHandler(c *gin.Context) {
 	response.ResponseSuccess(c, nil)
 }
 
+// UploadAvatarHandler 头像上传 POST /api/v1/user/avatar（需登录，multipart/form-data）。
+// 表单字段名 avatar；返回可访问的相对 URL（/uploads/avatars/{user_id}.{ext}）。
+func UploadAvatarHandler(c *gin.Context) {
+	// 1. 解析 multipart 中的文件字段：缺失/表单非法统一参数错误
+	fh, err := c.FormFile("avatar")
+	if err != nil {
+		response.ResponseError(c, code.CodeInvalidParam)
+		return
+	}
+	// 2. userID 来自 JWT（只能改自己的头像，防越权：即使带别人 id 的
+	//    请求体也无效——路径与 DB 更新均以 token 身份为准）
+	userID := GetCurrentUserID(c)
+	url, err := logic.UploadAvatar(userID, fh)
+	if err != nil {
+		switch {
+		case errors.Is(err, logic.ErrAvatarFormat):
+			response.ResponseError(c, code.CodeAvatarFormat)
+		case errors.Is(err, logic.ErrAvatarTooLarge):
+			response.ResponseError(c, code.CodeAvatarLarge)
+		case errors.Is(err, logic.ErrUserNotFound):
+			response.ResponseError(c, code.CodeNeedLogin)
+		default:
+			response.ResponseError(c, code.CodeServerBusy)
+		}
+		return
+	}
+	// 3. 返回相对 URL：前端拼 base 地址（跨环境迁移不用改 DB 数据）
+	response.ResponseSuccess(c, gin.H{"avatar_url": url})
+}
+
 // UpdateAddressHandler 修改收货地址 PUT /api/v1/user/address（需登录）。
 func UpdateAddressHandler(c *gin.Context) {
 	var p model.ParamUpdateAddress

@@ -16,6 +16,8 @@ const (
 	CodeNeedLogin    ResCode = 10003
 	CodeInvalidToken ResCode = 10004
 	CodeWrongLogin   ResCode = 10005 //用户名或密码错误
+	CodeAvatarFormat ResCode = 10006 //头像格式不支持（仅 jpg/png/webp）
+	CodeAvatarLarge  ResCode = 10007 //头像文件过大
 
 	//拼单模块
 	CodeGroupBuyNotExist ResCode = 20001 //拼单不存在
@@ -51,6 +53,8 @@ var codeMesMap = map[ResCode]string{
 	CodeNeedLogin:    "需要登录",
 	CodeInvalidToken: "无效的Token",
 	CodeWrongLogin:   "用户名或密码错误",
+	CodeAvatarFormat: "头像格式不支持（仅支持 jpg/png/webp）",
+	CodeAvatarLarge:  "头像文件过大",
 
 	CodeGroupBuyNotExist: "拼单不存在",
 	CodeGroupBuyExpired:  "拼单已截止",

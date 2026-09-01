@@ -21,6 +21,15 @@ type ServerConfig struct {
 	*RabbitMQConfig  `mapstructure:"rabbitmq"`
 	*JWTConfig       `mapstructure:"jwt"`
 	*SnowflakeConfig `mapstructure:"snowflake"`
+	*UploadConfig    `mapstructure:"upload"`
+}
+
+// UploadConfig 上传文件配置：本地磁盘存储（MVP 不引入对象存储）。
+// Dir 在两种部署形态下不同——本地 dev 相对 backend/，容器内挂命名卷，
+// 由各环境配置文件自行指定，代码不写死路径。
+type UploadConfig struct {
+	Dir       string `mapstructure:"dir"`         // 上传根目录（头像存 {dir}/avatars/）
+	MaxSizeMB int64  `mapstructure:"max_size_mb"` // 单文件大小上限（MB）
 }
 
 type MySQLConfig struct {
