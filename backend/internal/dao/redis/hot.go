@@ -1,7 +1,7 @@
 // Package redis 数据访问层：Redis 缓存/库存操作，不含业务逻辑。
 // 本文件为拼单热榜 ZSet 操作。
 // 热榜规则：member=good_id，score=热度分；发布 ZADD 0、建单成功 ZINCRBY +1、
-// 查询 ZREVRANGE+回表过滤、定时衰减、终态 ZREM、启动重建。
+// 查询 ZREVRANGE+回表过滤非 recruiting（终态不展示靠查询侧过滤，不做 ZREM/衰减）。
 package redis
 
 import (
