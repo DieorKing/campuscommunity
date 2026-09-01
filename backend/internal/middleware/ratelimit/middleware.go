@@ -46,3 +46,29 @@ func UserRateLimitMiddleware(limiter Limiter) gin.HandlerFunc {
 func formatKey(userID int64) string {
 	return "u:" + strconv.FormatInt(userID, 10)
 }
+
+// IPRateLimitMiddleware IP 维度限流中间件（挂公开接口，无需 JWT，如注册防脚本）。
+func IPRateLimitMiddleware(limiter Limiter) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 容器栈经 Nginx 反代：Nginx 已设置 X-Forwarded-For，ClientIP 可还原
+		// 真实客户端 IP；X-Forwarded-For 可伪造属已知边界（MVP 接受，
+		// 严谨做 SetTrustedProxies 白名单
+		key := formatIPKey(c.ClientIP())
+		if key == "" {
+			// 防御分支：限流组件自身异常不阻断业务
+			c.Next()
+			return
+		}
+		if !limiter.Allow(key) {
+			response.ResponseError(c, code.CodeRateLimited)
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// formatIPKey IP 转限流 key（前缀区隔，与 formatKey 同构：u: / ip:）。
+func formatIPKey(ip string) string {
+	return "ip:" + ip
+}

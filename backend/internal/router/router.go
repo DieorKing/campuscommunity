@@ -26,11 +26,18 @@ func SetupRouter(mode string) *gin.Engine {
 		response.ResponseSuccess(c, "OK")
 	})
 
-	// 用户模块：注册/登录（公开接口，无需鉴权）
+	// 用户模块：注册/登录（公开接口，无需鉴权）。
+	// 注册接口挂 IP 维度限流（公开接口无登录态拿不到 userID，只能按
+	// 来源 IP——与抢单接口的 userID 维度形成场景互补：有身份用身份，
+	// 无身份用 IP，同一个 Limiter 接口两种 keyFunc 零改动）。
+	// login 不挂：登录是存量用户的高频正常行为（换设备/重连都要登录，
+	// 输错密码还会重试），IP 维度限流在 NAT 出口下会误伤共享出口的
+	// 合法用户——防脚本注册用验证码演进（限流挡流量，验证码挡人机）。
+	registerLimiter := ratelimit.NewMemoryLimiter(0.1, 3)
 	authGroup := v1.Group("/auth")
 	{
-		authGroup.POST("/register", controller.RegisterHandler) // 注册
-		authGroup.POST("/login", controller.LoginHandler)       // 登录，返回 JWT
+		authGroup.POST("/register", ratelimit.IPRateLimitMiddleware(registerLimiter), controller.RegisterHandler) // 注册（IP 限流内）
+		authGroup.POST("/login", controller.LoginHandler)                                                         // 登录，返回 JWT
 	}
 
 	// 用户模块：个人资料/收货地址（挂 JWT 鉴权中间件，组内路由全部需登录）

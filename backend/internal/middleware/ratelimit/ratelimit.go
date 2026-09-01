@@ -1,15 +1,10 @@
-// Package ratelimit 限流中间件：令牌桶算法，按用户维度精细限流。
+// Package ratelimit 限流中间件：令牌桶算法。
 //
-// 模式说明（Limiter 接口抽象）：
-// 接口为分布式演进预留——多实例部署时限流计数需跨实例共享，届时
-// 提供 Redis+Lua 实现（脚本内原子完成「补令牌+扣令牌」）替换内存桶，
-// 挂载代码零改动。当前单实例部署选择内存桶：单机无跨实例共享计数
-// 需求，Redis 桶反而引入每请求一跳网络往返。
+// Limiter 接口为分布式演进预留：多实例部署时以 Redis+Lua 实现替换内存桶，
+// 挂载代码零改动。当前单实例部署用内存桶（无跨实例共享计数需求）。
 //
-// 限流 key 设计（场景驱动）：按 userID 而非 IP——校园网 NAT 出口下
-// 数千学生共享少数公网 IP，按 IP 限流会误伤共享出口的合法用户；
-// userID 由 JWT 中间件解出（本中间件挂在 JWT 之后），精确到人。
-// 公开接口（无 userID）不适用本中间件，留给网关层做粗粒度防护。
+// key 维度（场景驱动）：userID（有登录态接口，NAT 场景精确到人）/
+// IP（注册等公开接口，无登录态可用）。
 package ratelimit
 
 import (
@@ -64,18 +59,21 @@ func (l *MemoryLimiter) Allow(key string) bool {
 
 	now := time.Now()
 	b, ok := l.buckets[key]
-	if !ok {
-		// 首次访问：满桶起步（新用户获得完整突发额度）
-		l.buckets[key] = &memoryBucket{tokens: l.capacity, lastTime: now}
-		return true
+	if ok {
+		// 惰性补充：按时间差补令牌，封顶容量
+		elapsed := now.Sub(b.lastTime).Seconds()
+		b.tokens += elapsed * l.rate
+		if b.tokens > l.capacity {
+			b.tokens = l.capacity
+		}
+		b.lastTime = now
+	} else {
+		// 首次访问：满桶起步（新用户获得完整突发额度）。
+		// 创建后不直接 return true——落入下方统一扣减逻辑，
+		// 否则首请求白得一次额度（突发上限实际为 capacity+1）。
+		b = &memoryBucket{tokens: l.capacity, lastTime: now}
+		l.buckets[key] = b
 	}
-	// 惰性补充：按时间差补令牌，封顶容量
-	elapsed := now.Sub(b.lastTime).Seconds()
-	b.tokens += elapsed * l.rate
-	if b.tokens > l.capacity {
-		b.tokens = l.capacity
-	}
-	b.lastTime = now
 	// 消耗判定：有令牌即放行并扣减
 	if b.tokens >= 1 {
 		b.tokens--
