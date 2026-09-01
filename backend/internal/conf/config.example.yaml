@@ -1,5 +1,6 @@
-# campuscommunity 后端配置模板（脱敏版）
-# 用法：复制为 config.yaml 并填入真实密码
+# campuscommunity 后端配置模板（本地开发环境 · 脱敏版）
+# 用法：复制为 config.yaml。密码统一 12345678a，与 README 部署文档对齐；
+#       本地组件密码不同时替换为真实值。容器部署用 config.container.example.yaml。
 # 生成日期: 2026-08-06
 
 name: campus_community_server
@@ -10,19 +11,19 @@ mysql:
   host: "127.0.0.1"
   port: 3306
   username: "root"
-  password: "your_password_here"      # ← 替换为本地 MySQL root 密码
+  password: "12345678a"               # 本地 MySQL root 密码（不同则替换）
   database: "campuscommunity"
   charset: "utf8mb4"
   parse_time: true
   loc: "Local"
   max_idle_conns: 100     # 建议 ≈ max_open_conns：高频短查询场景连接全保活，防连接风暴
   max_open_conns: 100
-  conn_max_lifetime: "1h" # 连接定期换新，防被 MySQL wait_timeout 暗杀
+  conn_max_lifetime: "1h" # 连接定期换新，防被 MySQL wait_timeout 终结长连接
 
 redis:
-  host: "192.168.81.129"   # 虚拟机 IP
+  host: "127.0.0.1"        # 本地/容器映射
   port: 6379
-  password: "your_password_here"      # ← 替换为 Redis 密码
+  password: "12345678a"               # Redis 密码（不同则替换）
   db: 0
   pool_size: 10
   min_idle_conns: 5
@@ -30,8 +31,8 @@ redis:
 rabbitmq:
   host: 127.0.0.1            # Docker 映射到宿主
   port: 5672
-  username: guest
-  password: guest
+  username: trKing
+  password: "12345678a"               # 与 docker-compose.yml 对齐
   vhost: "/"
   exchange: campus.community
 

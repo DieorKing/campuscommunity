@@ -102,6 +102,7 @@ func main() {
 	// 配置文件路径：相对于运行时工作目录(cwd)。
 	// 约定在 backend/ 目录执行 `go run cmd/main.go`，故路径为 internal/conf/config.yaml。
 	filename := flag.String("f", "internal/conf/config.yaml", "配置文件路径(相对于运行时cwd)")
+	flag.Parse() // 解析命令行参数；不调用则 -f 参数被忽略，恒用默认路径
 	// 加载配置
 	if err := conf.Init(*filename); err != nil {
 		fmt.Printf("load config failed, err:%v\n", err)

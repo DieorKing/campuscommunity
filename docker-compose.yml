@@ -1,21 +1,93 @@
-# campuscommunity 本地依赖编排
-# 仅编排 RabbitMQ（默认启动）与 Nginx（prod-preview profile，默认不启动）
-# MySQL 用本地原生、Redis 用虚拟机、Backend/Frontend 原生运行
-# 生成日期: 2026-08-06
+# campuscommunity 五容器一键部署编排
+# Nginx(网关+静态托管) + Backend(Go API) + MySQL + Redis + RabbitMQ
+# 启动: docker compose up -d  （首次自动构建 backend 镜像）
+# 前端不在容器清单：npm run build 产物 dist 挂载进 Nginx 容器托管
+# 生成日期: 2026-08-06 · 五容器版: 2026-09-01
 
 services:
+  # ---------- 数据层三件套 ----------
+  mysql:
+    image: mysql:5.7          # 硬约束：MySQL 5.7
+    container_name: campuscommunity-mysql
+    restart: unless-stopped
+    command:                  # 容器内 utf8mb4 需启动参数显式指定（5.7 默认 latin1）
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: "12345678a"   # 与 config.container.example.yaml 对齐；生产替换
+      MYSQL_DATABASE: campuscommunity   # 首次启动自动建库
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"           # 宿主机 3306 被本地原生 MySQL 占用 → 映射 3307 仅供宿主机调试；
+                              # 容器互访走内部网络 mysql:3306，不经过此映射
+    volumes:
+      - mysql-data:/var/lib/mysql   # 命名卷：数据生命周期独立于容器，容器删除重建不丢数据
+    healthcheck:              # 探活：MySQL 真正可接受连接才算 healthy
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p12345678a"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - campuscommunity
+
+  redis:
+    image: redis:7-alpine
+    container_name: campuscommunity-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "12345678a"]  # 与 example 配置对齐
+    ports:
+      - "6379:6379"           # 宿主机 6379 空闲（原 Redis 在 VM 上，非本机）
+    volumes:
+      - redis-data:/data      # 持久化：热榜/补偿队列等可重建，冷启动为空属预期
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a 12345678a ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - campuscommunity
+
   rabbitmq:
     image: rabbitmq:3.13-management
     container_name: campuscommunity-rabbitmq
     restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: trKing     # 与 example 配置对齐
+      RABBITMQ_DEFAULT_PASS: "12345678a"
     ports:
       - "5672:5672"           # AMQP
       - "15672:15672"         # 管理 UI
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12             # RabbitMQ 冷启动较慢，多留重试余量
+    networks:
+      - campuscommunity
+
+  # ---------- 应用层 ----------
+  backend:
+    build:                    # 首次 up 时从 ./backend 构建（多阶段 Dockerfile）
+      context: ./backend
+    image: campuscommunity-backend:latest
+    container_name: campuscommunity-backend
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "8080:8080"           # 保留宿主机直连口：绕过 Nginx 压测后端基线用
+    volumes:
+      - ./backend/internal/conf/config.container.yaml:/app/config/config.container.yaml:ro
+                              # 配置挂载而非进镜像：改配置不重建镜像（12-factor）
+    depends_on:               # 并行启动的顺序治理：等数据层健康再启动，防连库竞态
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - campuscommunity
 
@@ -23,16 +95,19 @@ services:
     image: nginx:1.27-alpine
     container_name: campuscommunity-nginx
     restart: unless-stopped
-    profiles: ["prod-preview"]   # 默认不启动，`make prod-preview` 时拉起
     ports:
-      - "80:80"
+      - "80:80"               # 系统唯一对外入口：静态资源 + /api/ 反代
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./frontend/dist:/usr/share/nginx/html:ro   # 前端构建产物
+      - ./frontend/dist:/usr/share/nginx/html:ro   # 前端构建产物（需先 npm run build）
+    depends_on:
+      - backend
     networks:
       - campuscommunity
 
 volumes:
+  mysql-data:
+  redis-data:
   rabbitmq-data:
 
 networks:

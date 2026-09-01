@@ -8,13 +8,18 @@ backend/tmp/          # air 热重载临时目录
 *.exe
 *.exe~
 
+# ===== 本机构建产物（弱网临时方案，不入库；交付用多阶段 Dockerfile） =====
+backend/server-linux
+backend/Dockerfile.prebuilt
+
 # ===== 日志 =====
 *.log
 backend/logs/
 
 # ===== 配置（含明文密码，不入库）=====
-# 真实配置文件不入库，仅保留 config.example.yaml 脱敏模板
+# 真实配置文件不入库，仅保留 config.example.yaml / config.container.example.yaml 脱敏模板
 backend/internal/conf/config.yaml
+backend/internal/conf/config.container.yaml
 
 # ===== 文档（内部材料，不入库）=====
 docs/

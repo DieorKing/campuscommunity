@@ -1,0 +1,6 @@
+# 构建上下文排除清单：减小上下文传输体积，防本机产物进镜像
+web_app.log*
+*.log
+tmp/
+.env
+server-linux          # 宿主机交叉编译产物（弱网临时方案），官方构建走 Dockerfile 多阶段
