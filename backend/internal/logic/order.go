@@ -276,10 +276,11 @@ func CancelOrder(userID, orderID int64) error {
 	if !ok {
 		return ErrOrderStatusChanged
 	}
-	// 3. best-effort：释放 Redis 名额（INCR stock + SREM members）。
-	//    失败后果：少卖方向（名额没放出去/该用户被 DUPLICATE 误拦），
-	//    不超卖，记日志人工/补偿处理
-	if err := redis.ReleaseGroupBuySlot(goodID, userID); err != nil {
+	// 3. best-effort：释放 Redis 名额（仅 INCR stock，无 SREM——判重语义
+	//    收口见 ReleaseGroupBuySlot 注释：取消后本人不可再抢同一拼单，
+	//    名额退回池子供其他用户预扣）。
+	//    失败后果：少卖方向（名额没放出去），不超卖，记日志人工/补偿处理
+	if err := redis.ReleaseGroupBuySlot(goodID); err != nil {
 		zap.L().Error("logic: release group buy slot failed (under-sell direction, tolerable)",
 			zap.Int64("good_id", goodID), zap.Int64("user_id", userID), zap.Error(err))
 	}

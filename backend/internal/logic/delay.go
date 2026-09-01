@@ -77,11 +77,13 @@ func closeExpiredOrders() {
 			continue
 		}
 
-		// 关单成功 → 事务已提交，释放 Redis 名额（INCR stock + SREM members）。
+		// 关单成功 → 事务已提交，释放 Redis 名额（仅 INCR stock，无 SREM）。
 		// 守恒式记账：每次释放对称回补，不按拼单状态分支（recruiting 时
 		// 名额回流可再抢；成团后入口拦截，回补只为账目守恒可对账）。
+		// 释放语义与取消同源：关单后本人不可再抢同一拼单（uk_user_good
+		// 覆盖 closed 历史），名额退回池子供其他用户。
 		// best-effort：失败是少卖方向，记日志靠补偿
-		if err := redis.ReleaseGroupBuySlot(goodID, userID); err != nil {
+		if err := redis.ReleaseGroupBuySlot(goodID); err != nil {
 			zap.L().Error("logic: release slot after close failed (under-sell direction, tolerable)",
 				zap.Int64("good_id", goodID), zap.Int64("user_id", userID), zap.Error(err))
 		}

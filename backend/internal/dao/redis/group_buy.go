@@ -4,7 +4,6 @@ package redis
 
 import (
 	"fmt"
-	"strconv"
 )
 
 // groupBuyStockKey 拼单库存键：group_buy:{good_id}:stock。
@@ -52,21 +51,24 @@ func GetGroupBuyStock(goodID int64) (int64, error) {
 	return val, nil
 }
 
-// ReleaseGroupBuySlot 释放拼单名额（用户取消订单时调用：
-// INCR stock + SREM members）。与预扣（DECR + SADD）互为逆操作。
+// ReleaseGroupBuySlot 释放拼单名额（用户取消订单时调用：仅 INCR stock）。
+// 与预扣（DECR）互为逆操作；让出的名额退回池子供【其他用户】预扣。
 // 时序约定：必须在 DB 取消事务【提交成功后】调用——Redis 是派生数据，
 // 真值源（订单状态）先行；若反序，DB 取消失败而 Redis 已放名额 = 超卖窗口。
-// 两条命令非原子（无 Lua）：取消是低频用户操作，且 SREM 残留的后果仅是
-// 该用户无法再抢此单（DUPLICATE 拦截，少卖方向可容忍），不值得为此加锁。
+//
+// 不做 SREM members（判重语义收口）：取消后本人【不可再抢同一拼单】——
+// DB orders 表 (user_id, good_id) 唯一索引 uk_user_good 覆盖 cancelled
+// 历史参与，重抢必撞 Duplicate entry（消费者按幂等跳过，建不出新订单）。
+// Redis 与 DB 两层判重必须保持同一语义：若此处 SREM 放行而 DB 拦死，
+// 会出现「grabbed=true 却永远无订单」的静默失败（终测实踩）。
+// 取消的参与记录以 cancelled 订单形式保留（历史事实不可篡改），
+// 用户想再参与需选择其他拼单。
+//
 // 失败语义 best-effort：调用方记日志观察，修复靠人工/补偿任务。
-func ReleaseGroupBuySlot(goodID, userID int64) error {
-	// 1. 库存 +1：让出的名额可被后续抢单者预扣
+func ReleaseGroupBuySlot(goodID int64) error {
+	// 库存 +1：让出的名额退回池子，可被后续抢单者预扣
 	if err := client.Incr(groupBuyStockKey(goodID)).Err(); err != nil {
 		return fmt.Errorf("redis: release slot incr stock: %w", err)
-	}
-	// 2. 成员移除：该用户恢复「可再抢此单」资格（SREM 残留则被 DUPLICATE 误拦）
-	if err := client.SRem(groupBuyMembersKey(goodID), strconv.FormatInt(userID, 10)).Err(); err != nil {
-		return fmt.Errorf("redis: release slot srem member: %w", err)
 	}
 	return nil
 }
