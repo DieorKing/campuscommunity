@@ -41,6 +41,19 @@ export const useUserStore = defineStore('user', () => {
     await request.put('/user/address', { address })
   }
 
+  // 上传头像：multipart/form-data 提交文件，返回 { avatar_url }（相对路径）。
+  // Content-Type 必须显式指定 multipart，让浏览器自动生成 boundary 分隔符
+  async function uploadAvatar(file) {
+    const fd = new FormData()
+    fd.append('avatar', file)
+    const data = await request.post('/user/avatar', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    // 头像上传即生效（后端已写库），立即刷新本地资料，界面头像同步更新
+    await fetchProfile()
+    return data
+  }
+
   return {
     token,
     userInfo,
@@ -51,5 +64,6 @@ export const useUserStore = defineStore('user', () => {
     fetchProfile,
     updateProfile,
     updateAddress,
+    uploadAvatar,
   }
 })

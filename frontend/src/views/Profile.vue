@@ -23,10 +23,18 @@
         </el-form-item>
         <el-form-item label="头像">
           <div class="avatar-row">
-            <el-input v-model="edit.avatar" placeholder="头像 URL" />
-            <el-avatar :src="edit.avatar || undefined" :size="48" class="avatar-preview">
+            <el-avatar :src="userInfo.avatar || undefined" :size="64" class="avatar-preview">
               头像
             </el-avatar>
+            <!-- 自定义上传：绕过 el-upload 默认 action，走 request 拦截器（带 token） -->
+            <el-upload
+              :show-file-list="false"
+              accept=".jpg,.jpeg,.png,.webp"
+              :before-upload="beforeAvatarUpload"
+              :http-request="doAvatarUpload"
+            >
+              <el-button :loading="uploadingAvatar">上传头像</el-button>
+            </el-upload>
           </div>
         </el-form-item>
         <el-form-item>
@@ -61,12 +69,12 @@ const userStore = useUserStore()
 
 const savingProfile = ref(false)
 const savingAddress = ref(false)
+const uploadingAvatar = ref(false)
 
 // 本地编辑态：从已加载的个人资料初始化
 const edit = reactive({
   nickname: '',
   phone: '',
-  avatar: '',
   address: '',
 })
 
@@ -78,7 +86,6 @@ onMounted(async () => {
     Object.assign(edit, {
       nickname: userInfo.value.nickname || '',
       phone: userInfo.value.phone || '',
-      avatar: userInfo.value.avatar || '',
       address: userInfo.value.address || '',
     })
   } catch (e) {
@@ -86,12 +93,41 @@ onMounted(async () => {
   }
 })
 
+// 头像上传前置校验：类型与大小在客户端先拦一层（后端魔数/大小校验仍是权威，
+// 客户端校验只为省一次必然失败的请求）
+function beforeAvatarUpload(file) {
+  const okTypes = ['image/jpeg', 'image/png', 'image/webp']
+  if (!okTypes.includes(file.type)) {
+    ElMessage.error('仅支持 jpg/png/webp 格式')
+    return false
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.error('头像不能超过 5MB')
+    return false
+  }
+  return true
+}
+
+// 头像上传：自定义 http-request（el-upload 默认 action 不经过 axios 拦截器）。
+// 上传即生效（后端写库），成功后 fetchProfile 刷新 userInfo，界面头像同步
+async function doAvatarUpload({ file }) {
+  uploadingAvatar.value = true
+  try {
+    await userStore.uploadAvatar(file)
+    ElMessage.success('头像已更新')
+  } catch (e) {
+    // 后端业务码：10006 格式不支持 / 10007 文件过大（客户端校验外的兜底提示）
+    ElMessage.error(e.message || '上传失败')
+  } finally {
+    uploadingAvatar.value = false
+  }
+}
+
 // 保存资料：只提交「修改过的字段」（PATCH 部分更新，与后端接口语义一致）
 async function handleSaveProfile() {
   const patch = {}
   if (edit.nickname !== (userInfo.value.nickname || '')) patch.nickname = edit.nickname
   if (edit.phone !== (userInfo.value.phone || '')) patch.phone = edit.phone
-  if (edit.avatar !== (userInfo.value.avatar || '')) patch.avatar = edit.avatar
 
   if (Object.keys(patch).length === 0) {
     ElMessage.info('资料没有变化')
@@ -105,7 +141,6 @@ async function handleSaveProfile() {
     Object.assign(edit, {
       nickname: userInfo.value.nickname || '',
       phone: userInfo.value.phone || '',
-      avatar: userInfo.value.avatar || '',
     })
     ElMessage.success('资料已保存')
   } catch (e) {
