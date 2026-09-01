@@ -23,6 +23,7 @@ var (
 	ErrGrabDuplicate = errors.New("已参与过该拼单")      // Lua 返回 DUPLICATE（幂等防线一）
 	ErrGrabPublisher = errors.New("发布者不能参与自己的拼单") // 业务规则：发布者不可抢自己的单
 	ErrGrabBusy      = errors.New("抢单繁忙，请稍后重试")   // 锁竞争失败（≠售罄）
+	ErrGrabNoAddress = errors.New("请先填写收货地址")     // 业务规则：下单前须有收货地址（订单要快照地址）
 )
 
 // GrabGroupBuy 抢单（POST /api/v1/group-buy/:id/grab，生产者侧六步）。
@@ -59,6 +60,17 @@ func GrabGroupBuy(userID, goodID int64) (*model.GrabResult, error) {
 	// 发布者校验：业务红线——发布者不能参与自己的拼单
 	if gb.PublisherID.Int64() == userID {
 		return nil, ErrGrabPublisher
+	}
+	// 收货地址校验：订单建单时会快照用户当前地址，空地址会产出无法修复的订单
+	// （存根语义：订单开出后地址定格，改用户表不影响已建订单）。
+	// 必须放在锁/Lua 之前：这是第一个副作用出现前的最后关口，此处拦截零成本；
+	// 放到消费端才发现则预扣已烧库存，确定性失败白白损耗名额（fail-fast）
+	u, err := dao.GetUserByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("logic: grab get user: %w", err)
+	}
+	if u.Address == "" {
+		return nil, ErrGrabNoAddress
 	}
 
 	// ---------- step 2：分布式锁（拼单级互斥 + 快速失败） ----------

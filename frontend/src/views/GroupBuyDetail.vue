@@ -118,7 +118,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading, SuccessFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { getGroupBuyDetail, getGrabStatus, grabGroupBuy } from '../api/groupbuy'
 import { useNotificationStore } from '../stores/notification'
@@ -218,7 +218,18 @@ async function handleGrab() {
     pollGrabStatus(1)
   } catch (e) {
     // 业务码已由拦截器翻译：20004 售罄 / 20005 重复 / 20006 发布者 / 20002 截止 / 20007 繁忙
-    ElMessage.error(e.message || '抢单失败')
+    if (e.code === 20008) {
+      // 未填收货地址：确认框引导去个人资料补填（抢单前置条件，补完回来重抢）
+      ElMessageBox.confirm('参与拼单需要收货地址（下单时快照到订单），是否现在去填写？', '缺少收货地址', {
+        confirmButtonText: '去填写',
+        cancelButtonText: '取消',
+        type: 'warning',
+      })
+        .then(() => router.push('/profile'))
+        .catch(() => {})
+    } else {
+      ElMessage.error(e.message || '抢单失败')
+    }
     fetchDetail() // 状态可能已变（如刚好满员），刷新详情
   } finally {
     grabbing.value = false

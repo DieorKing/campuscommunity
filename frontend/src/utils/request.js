@@ -28,7 +28,10 @@ request.interceptors.response.use(
         localStorage.removeItem('token')
         window.location.href = '/login'
       }
-      return Promise.reject(new Error(res.msg || '请求失败'))
+      // 业务码挂在 error 上：调用方可按 code 做针对性引导（如 20008 未填地址 → 跳个人资料）
+      const err = new Error(res.msg || '请求失败')
+      err.code = res.code
+      return Promise.reject(err)
     }
     return res.data
   },

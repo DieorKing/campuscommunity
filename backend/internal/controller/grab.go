@@ -43,6 +43,8 @@ func GrabHandler(c *gin.Context) {
 			response.ResponseError(c, code.CodeGrabPublisher)
 		case errors.Is(err, logic.ErrGrabBusy):
 			response.ResponseError(c, code.CodeGrabBusy)
+		case errors.Is(err, logic.ErrGrabNoAddress):
+			response.ResponseError(c, code.CodeGrabNoAddress)
 		default:
 			response.ResponseError(c, code.CodeServerBusy)
 		}
