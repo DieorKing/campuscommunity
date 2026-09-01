@@ -3,6 +3,7 @@ package router
 import (
 	"campuscommunity/internal/controller"
 	jwtmid "campuscommunity/internal/middleware/jwt"
+	"campuscommunity/internal/middleware/ratelimit"
 	"campuscommunity/pkg/utils/code"
 	"campuscommunity/pkg/utils/logger"
 	"campuscommunity/pkg/utils/response"
@@ -44,13 +45,24 @@ func SetupRouter(mode string) *gin.Engine {
 	// 拼单模块：发布 + 详情 + 抢单 + 状态轮询（挂 JWT 强制鉴权，四个接口都必须登录）。
 	// 详情/抢单/轮询放强制组：详情页是转化入口（看完就要抢单），抢单与轮询依赖
 	// 确定的 userID（本人视角/幂等判定），匿名请求无意义。
+	// 抢单/轮询路由额外挂用户维度令牌桶限流（JWT 之后）。
+	// 参数依据：单用户 rate 参照合法用户行为上限——前端轮询 5s 一次 +
+	// 手点重试，正常峰值约 2~3 req/s，取 5/s 留一倍余量；桶容量 10
+	// 覆盖双击与快速重试的瞬时突发。脚本级高频请求在 10 发后被拒，
+	// 单用户无法占满系统容量（全系统级总闸属网关层职责，不在单机
+	// 中间件实现——分层限流：网关挡总量，应用层挡单用户）。
+	grabLimiter := ratelimit.NewMemoryLimiter(5, 10)
 	groupBuyGroup := v1.Group("/group-buy")
 	groupBuyGroup.Use(jwtmid.JWTAuthMiddleware())
 	{
 		groupBuyGroup.POST("", controller.CreateGroupBuyHandler)    // 发布拼单
 		groupBuyGroup.GET("/:id", controller.GroupBuyDetailHandler) // 拼单详情
-		groupBuyGroup.POST("/:id/grab", controller.GrabHandler)     // 抢单（受理中）
-		groupBuyGroup.GET("/:id/status", controller.StatusHandler)  // 抢单状态轮询（前端 5s 驱动）
+		grabGroup := groupBuyGroup.Group("")
+		grabGroup.Use(ratelimit.UserRateLimitMiddleware(grabLimiter))
+		{
+			grabGroup.POST("/:id/grab", controller.GrabHandler)    // 抢单（受理中，限流内）
+			grabGroup.GET("/:id/status", controller.StatusHandler) // 抢单状态轮询（前端 5s 驱动，限流内）
+		}
 	}
 
 	// 拼单模块：列表（可选鉴权——公开浏览 + 登录后附加参与标记，挂 JWTOptional 而非强制鉴权）。

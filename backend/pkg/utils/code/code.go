@@ -34,6 +34,9 @@ const (
 
 	//通知模块
 	CodeNotificationNotExist ResCode = 40001 //通知不存在
+
+	//限流模块
+	CodeRateLimited ResCode = 50001 //触发限流（令牌桶耗尽，请稍后重试）
 )
 
 var codeMesMap = map[ResCode]string{
@@ -61,6 +64,8 @@ var codeMesMap = map[ResCode]string{
 	CodeOrderStatusChanged: "订单状态已变更，请刷新后重试",
 
 	CodeNotificationNotExist: "通知不存在",
+
+	CodeRateLimited: "请求过于频繁，请稍后重试",
 }
 
 func (c ResCode) Msg() string {
