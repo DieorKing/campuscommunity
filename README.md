@@ -19,11 +19,11 @@
                        ▼                                            │
                 ┌─────────────┐   /api/  /uploads/                   │
                 │    Nginx    │ ────────────────────────┐            │
-                │ 静态托管+Gzip │ (运行时 resolver 解析)   │            │
+                │ 静态托管+Gzip│  (运行时 resolver 解析)    │           │
                 │  + 反向代理  │                          ▼            │
                 └─────────────┘                 ┌─────────────────┐   │
                        │                        │  Backend (Go)   │   │
-                       │ 静态资源                │  Gin + 业务逻辑   │   │
+                       │ 静态资源                │  Gin + 业务逻辑  │   │
                        ▼                        └─┬─────┬─────┬───┘   │
               ┌──────────────┐                    │     │     │       │
               │ frontend/dist│                    ▼     ▼     ▼       │
@@ -118,7 +118,7 @@ cd frontend && npm run dev
 |---|---|---|---|
 | 认证 | POST | /auth/register | 注册（IP 限流内） |
 | 认证 | POST | /auth/login | 登录，返回 JWT |
-| 用户 | GET | PATCH | /user/profile | 查看 | 部分更新资料 |
+| 用户 | GET / PATCH | /user/profile | 查看 | 部分更新资料 |
 | 用户 | PUT | /user/address | 修改收货地址 |
 | 用户 | POST | /user/avatar | 头像上传（multipart，≤5MB） |
 | 拼单 | POST | /group-buy | 发布拼单 |
