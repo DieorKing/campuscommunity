@@ -271,6 +271,15 @@ func CancelOrderTx(orderID, userID int64) (int64, bool, error) {
 		if r2.Error != nil {
 			return r2.Error
 		}
+		// 写3：删参与记录行——详情页「参与人员」以本表为数据源，
+		// 不删则取消者永久残留列表（进度 1/5 与人员 (2) 自相矛盾的脏数据）。
+		// 与写1/写2 同事务：订单取消、人数回退、名单移除是同一业务事实的
+		// 三个侧面，拆开即出现半提交。删除按 (good_id, user_id) 复合唯一
+		// 索引定位，O(1)。
+		if err := tx.Where("good_id = ? AND user_id = ?", goodID, userID).
+			Delete(&model.GroupBuyMember{}).Error; err != nil {
+			return fmt.Errorf("dao: cancel delete member record: %w", err)
+		}
 		return nil
 	})
 	if err != nil {
@@ -329,6 +338,13 @@ func CloseExpiredOrder(orderID int64) (goodID, userID int64, closed bool, err er
 			Update("current_members", gorm.Expr("current_members - 1"))
 		if r2.Error != nil {
 			return r2.Error
+		}
+		// 写3：删参与记录行（与 CancelOrderTx 写3 同构）——关单与取消是
+		// 同一「名额释放」业务事实的两条触发路径，任何一条漏删都会让
+		// 详情页「参与人员」残留终态订单持有人（进度与名单自相矛盾）。
+		if err := tx.Where("good_id = ? AND user_id = ?", order.GoodID, order.UserID).
+			Delete(&model.GroupBuyMember{}).Error; err != nil {
+			return fmt.Errorf("dao: close delete member record: %w", err)
 		}
 		goodID, userID = order.GoodID.Int64(), order.UserID.Int64()
 		return nil
