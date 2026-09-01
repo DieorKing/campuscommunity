@@ -145,12 +145,17 @@ func dispatch(c consumer, d amqp.Delivery, b *backoff) {
 		// 处理成功。error 级业务日志归 handler 自己打（它知道业务上下文），
 		// 这里只留一条 debug 级轨迹
 		ack(d)
+		// 成功打断失败序列：退避计数归零，下次故障从 1s 重新起跳
+		//（若不归零，历史积累的长退避会被偶发新故障继承）
+		b.reset()
 	case errors.Is(err, ErrAck):
-		// 确定性失败：重投无意义，ack 出局（防毒消息——防线在 handler 的分类）
+		// 确定性失败：重投无意义，ack 出局（防毒消息——防线在 handler 的分类）。
+		// 同样 reset：确定性失败不是基础设施故障，不应拉长后续退避节奏
 		zap.L().Info("mq: message acked as deterministic failure",
 			zap.String("queue", c.queue), zap.Uint64("delivery_tag", d.DeliveryTag),
 			zap.Error(err))
 		ack(d)
+		b.reset()
 	default:
 		// 暂时性失败：nack 重投 + 指数退避。退避让恢复中的基础设施喘口气
 		//（狂重试等于二次攻击）；prefetch=1 保证退避期间不堆积预取消息。
